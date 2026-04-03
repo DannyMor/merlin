@@ -8,3 +8,23 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Environment and secrets
+.env
+
+# IDE
+.idea/
+.vscode/
+
+# Tools
+.ruff_cache/
+.pyright/
+
+# Database
+*.db
+
+# Docker
+docker-compose.override.yml
+
+# OS
+.DS_Store
