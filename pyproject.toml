@@ -63,6 +63,7 @@ pythonVersion = "3.14"
 typeCheckingMode = "strict"
 venvPath = "."
 venv = ".venv"
+reportMissingTypeStubs = "warning"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
