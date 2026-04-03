@@ -15,5 +15,34 @@ services:
       timeout: 5s
       retries: 5
 
+  worker:
+    build: .
+    command: merlin-worker
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MERLIN__DB__HOST: timescaledb
+
+  orchestrator:
+    build: .
+    command: merlin-orchestrator
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MERLIN__DB__HOST: timescaledb
+
+  api:
+    build: .
+    command: merlin-api
+    ports:
+      - "8000:8000"
+    depends_on:
+      timescaledb:
+        condition: service_healthy
+    environment:
+      MERLIN__DB__HOST: timescaledb
+
 volumes:
   timescaledb_data:
