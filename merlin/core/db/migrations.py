@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 
 MIGRATIONS: list[str] = [
     # Version 1: schema_version table
@@ -60,6 +60,30 @@ MIGRATIONS: list[str] = [
         hostname TEXT NOT NULL,
         started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+    """,
+    # Version 5: assets table
+    """
+    CREATE TABLE IF NOT EXISTS assets (
+        symbol TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        asset_type TEXT NOT NULL,
+        exchange TEXT NOT NULL DEFAULT '',
+        active BOOLEAN NOT NULL DEFAULT TRUE
+    )
+    """,
+    # Version 6: market_ohlcv hypertable
+    """
+    CREATE TABLE IF NOT EXISTS market_ohlcv (
+        symbol TEXT NOT NULL,
+        market_date DATE NOT NULL,
+        open DOUBLE PRECISION NOT NULL,
+        high DOUBLE PRECISION NOT NULL,
+        low DOUBLE PRECISION NOT NULL,
+        close DOUBLE PRECISION NOT NULL,
+        volume BIGINT NOT NULL,
+        adjusted_close DOUBLE PRECISION,
+        PRIMARY KEY (symbol, market_date)
     )
     """,
 ]

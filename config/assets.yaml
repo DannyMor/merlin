@@ -1,0 +1,35 @@
+assets:
+  - symbol: SPY
+    name: "SPDR S&P 500 ETF Trust"
+    asset_type: etf
+    exchange: NYSE
+
+  - symbol: QQQ
+    name: "Invesco QQQ Trust"
+    asset_type: etf
+    exchange: NASDAQ
+
+  - symbol: VTI
+    name: "Vanguard Total Stock Market ETF"
+    asset_type: etf
+    exchange: NYSE
+
+  - symbol: BND
+    name: "Vanguard Total Bond Market ETF"
+    asset_type: bond
+    exchange: NYSE
+
+  - symbol: AAPL
+    name: "Apple Inc."
+    asset_type: stock
+    exchange: NASDAQ
+
+  - symbol: MSFT
+    name: "Microsoft Corporation"
+    asset_type: stock
+    exchange: NASDAQ
+
+  - symbol: GOOGL
+    name: "Alphabet Inc."
+    asset_type: stock
+    exchange: NASDAQ
