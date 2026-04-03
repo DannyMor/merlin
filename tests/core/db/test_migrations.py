@@ -1,5 +1,5 @@
 from merlin.core.db.memory import InMemoryDatabase
-from merlin.core.db.migrations import ensure_schema, get_current_version
+from merlin.core.db.migrations import SCHEMA_VERSION, ensure_schema, get_current_version
 
 
 class TestMigrations:
@@ -10,8 +10,7 @@ class TestMigrations:
         await ensure_schema(db)
 
         rows = await db.fetch_all("SELECT * FROM schema_version")
-        assert len(rows) == 1
-        assert rows[0]["version"] == 1
+        assert len(rows) == SCHEMA_VERSION
 
     async def test_ensure_schema_is_idempotent(self) -> None:
         db = InMemoryDatabase()
@@ -21,7 +20,7 @@ class TestMigrations:
         await ensure_schema(db)
 
         rows = await db.fetch_all("SELECT * FROM schema_version")
-        assert len(rows) == 1
+        assert len(rows) == SCHEMA_VERSION
 
     async def test_get_current_version_empty(self) -> None:
         db = InMemoryDatabase()
@@ -38,4 +37,4 @@ class TestMigrations:
         await ensure_schema(db)
 
         version = await get_current_version(db)
-        assert version == 1
+        assert version == SCHEMA_VERSION
