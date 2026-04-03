@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 
 MIGRATIONS: list[str] = [
     # Version 1: schema_version table
@@ -29,6 +29,37 @@ MIGRATIONS: list[str] = [
         action TEXT NOT NULL,
         detail JSONB NOT NULL DEFAULT '{}',
         correlation_id UUID
+    )
+    """,
+    # Version 3: tasks table
+    """
+    CREATE TABLE IF NOT EXISTS tasks (
+        id UUID PRIMARY KEY,
+        asset TEXT NOT NULL,
+        source TEXT NOT NULL,
+        data_type TEXT NOT NULL,
+        from_date TIMESTAMPTZ NOT NULL,
+        to_date TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        worker_id UUID,
+        retries INTEGER NOT NULL DEFAULT 0,
+        max_retries INTEGER NOT NULL DEFAULT 3,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        started_at TIMESTAMPTZ,
+        completed_at TIMESTAMPTZ,
+        error TEXT,
+        detail JSONB NOT NULL DEFAULT '{}',
+        UNIQUE (asset, source, data_type, from_date)
+    )
+    """,
+    # Version 4: workers table
+    """
+    CREATE TABLE IF NOT EXISTS workers (
+        id UUID PRIMARY KEY,
+        hostname TEXT NOT NULL,
+        started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
 ]

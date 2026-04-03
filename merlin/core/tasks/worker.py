@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import platform
+from typing import TYPE_CHECKING
+
+from merlin.core.events.models import Event, EventLevel, EventSource
+from merlin.core.tasks.models import TaskStatus, WorkerInfo
+
+if TYPE_CHECKING:
+    from merlin.core.events.interface import EventLog
+    from merlin.core.tasks.interface import TaskExecutor, TaskRepository
+
+logger = logging.getLogger(__name__)
+
+
+class Worker:
+    def __init__(
+        self,
+        repository: TaskRepository,
+        event_log: EventLog,
+        executor: TaskExecutor,
+        poll_interval: float = 5.0,
+        heartbeat_interval: float = 15.0,
+    ) -> None:
+        self._repo = repository
+        self._event_log = event_log
+        self._executor = executor
+        self._poll_interval = poll_interval
+        self._heartbeat_interval = heartbeat_interval
+        self._info = WorkerInfo(hostname=platform.node())
+        self._running = False
+
+    @property
+    def worker_id(self) -> WorkerInfo:
+        return self._info
+
+    async def _heartbeat_loop(self) -> None:
+        while self._running:
+            await self._repo.heartbeat(self._info.id)
+            await asyncio.sleep(self._heartbeat_interval)
+
+    async def tick(self) -> bool:
+        """Try to claim and execute one task. Returns True if a task was processed."""
+        task = await self._repo.claim(self._info.id)
+        if task is None:
+            return False
+
+        await self._event_log.emit(
+            Event(
+                source=EventSource.WORKER,
+                level=EventLevel.INFO,
+                component="worker",
+                action="task_started",
+                detail={"task_id": str(task.id), "asset": task.asset},
+            )
+        )
+
+        try:
+            await self._executor.execute(task)
+            await self._repo.update_status(task.id, TaskStatus.COMPLETED)
+            await self._event_log.emit(
+                Event(
+                    source=EventSource.WORKER,
+                    level=EventLevel.INFO,
+                    component="worker",
+                    action="task_completed",
+                    detail={"task_id": str(task.id), "asset": task.asset},
+                )
+            )
+        except Exception as exc:
+            error_msg = str(exc)
+            await self._repo.update_status(task.id, TaskStatus.FAILED, error=error_msg)
+            await self._event_log.emit(
+                Event(
+                    source=EventSource.WORKER,
+                    level=EventLevel.ERROR,
+                    component="worker",
+                    action="task_failed",
+                    detail={
+                        "task_id": str(task.id),
+                        "asset": task.asset,
+                        "error": error_msg,
+                    },
+                )
+            )
+            logger.exception("Task %s failed", task.id)
+
+        return True
+
+    async def run(self) -> None:
+        self._running = True
+        await self._repo.register_worker(self._info)
+        logger.info("Worker %s starting", self._info.id)
+
+        heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        try:
+            while self._running:
+                processed = await self.tick()
+                if not processed:
+                    await asyncio.sleep(self._poll_interval)
+        finally:
+            heartbeat_task.cancel()
+            await self._repo.remove_worker(self._info.id)
+
+    def stop(self) -> None:
+        self._running = False
