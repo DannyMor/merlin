@@ -1,0 +1,113 @@
+procedures:
+  - name: daily_returns
+    description: "Calculate daily returns for each symbol based on closing prices"
+    input:
+      table_name:
+        type: str
+        default: ohlcv
+    output_schema:
+      symbol: str
+      market_date: date
+      close: float
+      daily_return: float
+    engine: duckdb
+    sql: |
+      SELECT
+          symbol,
+          market_date,
+          close,
+          (close - LAG(close) OVER (PARTITION BY symbol ORDER BY market_date))
+              / LAG(close) OVER (PARTITION BY symbol ORDER BY market_date) AS daily_return
+      FROM {table_name}
+      ORDER BY symbol, market_date
+
+  - name: moving_average
+    description: "Calculate moving average of closing prices over a configurable window"
+    input:
+      table_name:
+        type: str
+        default: ohlcv
+      window:
+        type: int
+        default: 20
+    output_schema:
+      symbol: str
+      market_date: date
+      close: float
+      moving_avg: float
+    engine: duckdb
+    sql: |
+      SELECT
+          symbol,
+          market_date,
+          close,
+          AVG(close) OVER (
+              PARTITION BY symbol
+              ORDER BY market_date
+              ROWS BETWEEN {window_minus_1} PRECEDING AND CURRENT ROW
+          ) AS moving_avg
+      FROM {table_name}
+      ORDER BY symbol, market_date
+
+  - name: symbol_summary
+    description: "Aggregate statistics per symbol: trading days, period range, total return"
+    input:
+      table_name:
+        type: str
+        default: ohlcv
+    output_schema:
+      symbol: str
+      trading_days: int
+      first_date: date
+      last_date: date
+      period_low: float
+      period_high: float
+      first_close: float
+      last_close: float
+      total_return: float
+    engine: duckdb
+    sql: |
+      SELECT
+          symbol,
+          COUNT(*) AS trading_days,
+          MIN(market_date) AS first_date,
+          MAX(market_date) AS last_date,
+          MIN(low) AS period_low,
+          MAX(high) AS period_high,
+          FIRST(close ORDER BY market_date) AS first_close,
+          LAST(close ORDER BY market_date) AS last_close,
+          (LAST(close ORDER BY market_date) - FIRST(close ORDER BY market_date))
+              / FIRST(close ORDER BY market_date) AS total_return
+      FROM {table_name}
+      GROUP BY symbol
+      ORDER BY symbol
+
+  - name: correlation_matrix
+    description: "Cross-asset return correlation matrix"
+    input:
+      table_name:
+        type: str
+        default: ohlcv
+    output_schema:
+      symbol_a: str
+      symbol_b: str
+      correlation: float
+    engine: duckdb
+    sql: |
+      WITH returns AS (
+          SELECT
+              symbol,
+              market_date,
+              (close - LAG(close) OVER (PARTITION BY symbol ORDER BY market_date))
+                  / LAG(close) OVER (PARTITION BY symbol ORDER BY market_date) AS ret
+          FROM {table_name}
+      )
+      SELECT
+          a.symbol AS symbol_a,
+          b.symbol AS symbol_b,
+          CORR(a.ret, b.ret) AS correlation
+      FROM returns a
+      JOIN returns b ON a.market_date = b.market_date
+      WHERE a.ret IS NOT NULL AND b.ret IS NOT NULL
+      GROUP BY a.symbol, b.symbol
+      ORDER BY a.symbol, b.symbol

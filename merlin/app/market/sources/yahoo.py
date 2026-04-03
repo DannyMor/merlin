@@ -1,11 +1,12 @@
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false
-# pyright: reportUnnecessaryCast=false
-# Above: yfinance and pandas are untyped; this adapter module bridges them to typed Arrow tables.
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false
+# pyright: reportUnknownVariableType=false, reportUnknownArgumentType=false
+# yfinance and pandas are untyped; this adapter bridges them to typed Arrow tables.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
@@ -13,6 +14,8 @@ from merlin.core.sources.interface import DataType
 
 if TYPE_CHECKING:
     from datetime import date
+
+    import yfinance as yf
 
 logger = logging.getLogger(__name__)
 
@@ -70,8 +73,6 @@ class YahooFinanceSource:
         from_date: date,
         to_date: date,
     ) -> pa.Table:
-        import asyncio
-
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, self._fetch_sync, asset, data_type, from_date, to_date
@@ -84,124 +85,88 @@ class YahooFinanceSource:
         from_date: date,
         to_date: date,
     ) -> pa.Table:
-        import yfinance as yf  # pyright: ignore[reportMissingTypeStubs]
+        import yfinance as yf
 
-        ticker: object = yf.Ticker(asset)  # pyright: ignore[reportUnknownMemberType]
+        ticker = yf.Ticker(asset)
         start = from_date.isoformat()
         end = to_date.isoformat()
 
-        if data_type == DataType.OHLCV:
-            return self._fetch_ohlcv(ticker, asset, start, end)
-        if data_type == DataType.DIVIDENDS:
-            return self._fetch_dividends(ticker, asset, start, end)
-        if data_type == DataType.SPLITS:
-            return self._fetch_splits(ticker, asset, start, end)
-
-        msg = f"Unsupported data type: {data_type}"
-        raise ValueError(msg)
+        match data_type:
+            case DataType.OHLCV:
+                return self._fetch_ohlcv(ticker, asset, start, end)
+            case DataType.DIVIDENDS:
+                return self._fetch_dividends(ticker, asset, start, end)
+            case DataType.SPLITS:
+                return self._fetch_splits(ticker, asset, start, end)
+            case _:
+                msg = f"Unsupported data type: {data_type}"
+                raise ValueError(msg)
 
     def _fetch_ohlcv(
         self,
-        ticker: object,
+        ticker: yf.Ticker,
         asset: str,
         start: str,
         end: str,
     ) -> pa.Table:
-        df: object = ticker.history(  # pyright: ignore[reportAttributeAccessIssue]
-            start=start, end=end, auto_adjust=False
-        )
-        if df.empty:  # pyright: ignore[reportAttributeAccessIssue]
+        df = ticker.history(start=start, end=end, auto_adjust=False)
+        if df.empty:
             return empty_ohlcv_table()
 
-        df = df.reset_index()  # pyright: ignore[reportAttributeAccessIssue]
-        n = cast("int", len(df))  # pyright: ignore[reportArgumentType]
-        has_adj = "Adj Close" in df.columns  # pyright: ignore[reportAttributeAccessIssue]
-        adj_close: list[object] = (
-            cast("list[object]", df["Adj Close"].tolist())  # pyright: ignore[reportIndexIssue]
-            if has_adj
-            else [None] * n
-        )
+        df = df.reset_index()
+        n = len(df)
+        adj_close = df["Adj Close"].tolist() if "Adj Close" in df.columns else [None] * n
         return pa.table(
             {
                 "symbol": pa.array([asset] * n, type=pa.string()),
-                "market_date": pa.array(
-                    cast("list[object]", df["Date"].dt.date.tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.date32(),
-                ),
-                "open": pa.array(
-                    cast("list[object]", df["Open"].tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.float64(),
-                ),
-                "high": pa.array(
-                    cast("list[object]", df["High"].tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.float64(),
-                ),
-                "low": pa.array(
-                    cast("list[object]", df["Low"].tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.float64(),
-                ),
-                "close": pa.array(
-                    cast("list[object]", df["Close"].tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.float64(),
-                ),
-                "volume": pa.array(
-                    cast("list[object]", df["Volume"].tolist()),  # pyright: ignore[reportIndexIssue]
-                    type=pa.int64(),
-                ),
+                "market_date": pa.array(df["Date"].dt.date.tolist(), type=pa.date32()),
+                "open": pa.array(df["Open"].tolist(), type=pa.float64()),
+                "high": pa.array(df["High"].tolist(), type=pa.float64()),
+                "low": pa.array(df["Low"].tolist(), type=pa.float64()),
+                "close": pa.array(df["Close"].tolist(), type=pa.float64()),
+                "volume": pa.array(df["Volume"].tolist(), type=pa.int64()),
                 "adjusted_close": pa.array(adj_close, type=pa.float64()),
             }
         )
 
     def _fetch_dividends(
         self,
-        ticker: object,
+        ticker: yf.Ticker,
         asset: str,
         start: str,
         end: str,
     ) -> pa.Table:
-        div: object = ticker.dividends  # pyright: ignore[reportAttributeAccessIssue]
-        if div.empty:  # pyright: ignore[reportAttributeAccessIssue]
+        div = ticker.dividends
+        if div.empty:
             return empty_dividends_table()
 
-        div = div.loc[start:end]  # pyright: ignore[reportAttributeAccessIssue]
-        n = cast("int", len(div))  # pyright: ignore[reportArgumentType]
+        div = div.loc[start:end]
+        n = len(div)
         return pa.table(
             {
                 "symbol": pa.array([asset] * n, type=pa.string()),
-                "market_date": pa.array(
-                    cast("list[object]", div.index.date.tolist()),  # pyright: ignore[reportAttributeAccessIssue]
-                    type=pa.date32(),
-                ),
-                "amount": pa.array(
-                    cast("list[object]", div.tolist()),  # pyright: ignore[reportAttributeAccessIssue]
-                    type=pa.float64(),
-                ),
+                "market_date": pa.array(div.index.date.tolist(), type=pa.date32()),
+                "amount": pa.array(div.tolist(), type=pa.float64()),
             }
         )
 
     def _fetch_splits(
         self,
-        ticker: object,
+        ticker: yf.Ticker,
         asset: str,
         start: str,
         end: str,
     ) -> pa.Table:
-        splits: object = ticker.splits  # pyright: ignore[reportAttributeAccessIssue]
-        if splits.empty:  # pyright: ignore[reportAttributeAccessIssue]
+        splits = ticker.splits
+        if splits.empty:
             return empty_splits_table()
 
-        splits = splits.loc[start:end]  # pyright: ignore[reportAttributeAccessIssue]
-        n = cast("int", len(splits))  # pyright: ignore[reportArgumentType]
+        splits = splits.loc[start:end]
+        n = len(splits)
         return pa.table(
             {
                 "symbol": pa.array([asset] * n, type=pa.string()),
-                "market_date": pa.array(
-                    cast("list[object]", splits.index.date.tolist()),  # pyright: ignore[reportAttributeAccessIssue]
-                    type=pa.date32(),
-                ),
-                "ratio": pa.array(
-                    cast("list[object]", splits.tolist()),  # pyright: ignore[reportAttributeAccessIssue]
-                    type=pa.float64(),
-                ),
+                "market_date": pa.array(splits.index.date.tolist(), type=pa.date32()),
+                "ratio": pa.array(splits.tolist(), type=pa.float64()),
             }
         )

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import duckdb
 
@@ -9,12 +9,14 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 
-class AnalyticsEngine:
-    """Ephemeral DuckDB-based analytics engine.
+class AnalyticsEngine(Protocol):
+    def register_table(self, name: str, table: pa.Table) -> None: ...
+    def query(self, sql: str) -> pl.DataFrame: ...
+    def close(self) -> None: ...
 
-    Creates an in-memory DuckDB connection, registers Arrow tables,
-    and executes SQL queries returning Polars DataFrames.
-    """
+
+class DuckDBEngine:
+    """Ephemeral in-memory DuckDB engine."""
 
     def __init__(self) -> None:
         self._conn = duckdb.connect(":memory:")
@@ -28,7 +30,7 @@ class AnalyticsEngine:
     def close(self) -> None:
         self._conn.close()
 
-    def __enter__(self) -> AnalyticsEngine:
+    def __enter__(self) -> DuckDBEngine:
         return self
 
     def __exit__(self, *_args: object) -> None:
