@@ -50,7 +50,9 @@ select = [
     "RUF",  # ruff-specific
     "ANN",  # flake8-annotations
 ]
-ignore = []
+ignore = [
+    "UP017",  # datetime.UTC alias not recognized by pyright on Python 3.14
+]
 
 [tool.ruff.lint.isort]
 known-first-party = ["merlin"]

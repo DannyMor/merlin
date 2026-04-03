@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 MIGRATIONS: list[str] = [
     # Version 1: schema_version table
@@ -18,17 +18,27 @@ MIGRATIONS: list[str] = [
         applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
     """,
+    # Version 2: event_log table
+    """
+    CREATE TABLE IF NOT EXISTS event_log (
+        id UUID PRIMARY KEY,
+        ts TIMESTAMPTZ NOT NULL,
+        source TEXT NOT NULL,
+        level TEXT NOT NULL,
+        component TEXT NOT NULL,
+        action TEXT NOT NULL,
+        detail JSONB NOT NULL DEFAULT '{}',
+        correlation_id UUID
+    )
+    """,
 ]
 
 
 async def get_current_version(db: Database) -> int:
-    row = await db.fetch_one("SELECT MAX(version) as version FROM schema_version")
-    if row is None:
+    rows = await db.fetch_all("SELECT version FROM schema_version")
+    if not rows:
         return 0
-    version = row.get("version")
-    if version is None:
-        return 0
-    return int(version)
+    return max(int(row["version"]) for row in rows)
 
 
 async def ensure_schema(db: Database) -> None:
