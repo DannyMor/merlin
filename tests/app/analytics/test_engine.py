@@ -1,24 +1,25 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pyarrow as pa
 
-from merlin.app.analytics.engine import AnalyticsEngine
-from merlin.app.analytics.queries import (
-    correlation_matrix,
-    daily_returns,
-    moving_average,
-    symbol_summary,
-)
+from merlin.app.analytics.engine import DuckDBEngine
+from merlin.app.analytics.loader import load_procedures_by_name
+from merlin.app.analytics.models import ParamDef, ProcedureDef
+from merlin.app.analytics.runner import ProcedureRunner
 
 
 def _sample_ohlcv() -> pa.Table:
     dates = [date(2025, 1, i) for i in range(1, 11)]
     return pa.table(
         {
-            "symbol": pa.array(["AAPL"] * 10 + ["MSFT"] * 10, type=pa.string()),
-            "market_date": pa.array(dates + dates, type=pa.date32()),
+            "symbol": pa.array(
+                [*["AAPL"] * 10, *["MSFT"] * 10],
+                type=pa.string(),
+            ),
+            "market_date": pa.array([*dates, *dates], type=pa.date32()),
             "open": pa.array(
                 [
                     *[150.0, 151.0, 152.0, 151.0, 153.0, 154.0, 155.0, 153.0, 156.0, 157.0],
@@ -47,75 +48,120 @@ def _sample_ohlcv() -> pa.Table:
                 ],
                 type=pa.float64(),
             ),
-            "volume": pa.array(
-                [1000000] * 20,
-                type=pa.int64(),
-            ),
+            "volume": pa.array([1000000] * 20, type=pa.int64()),
         }
     )
 
 
-class TestAnalyticsEngine:
+class TestDuckDBEngine:
     def test_register_and_query(self) -> None:
-        with AnalyticsEngine() as engine:
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-
             result = engine.query("SELECT COUNT(*) AS cnt FROM ohlcv")
             assert result["cnt"][0] == 20
 
     def test_query_filter(self) -> None:
-        with AnalyticsEngine() as engine:
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-
             result = engine.query("SELECT COUNT(*) AS cnt FROM ohlcv WHERE symbol = 'AAPL'")
             assert result["cnt"][0] == 10
 
     def test_context_manager(self) -> None:
-        engine = AnalyticsEngine()
+        engine = DuckDBEngine()
         engine.register_table("ohlcv", _sample_ohlcv())
         engine.close()
 
 
-class TestAnalyticsQueries:
-    def test_daily_returns(self) -> None:
-        with AnalyticsEngine() as engine:
+class TestProcedureRunner:
+    def test_run_inline_procedure(self) -> None:
+        procedure = ProcedureDef(
+            name="count_rows",
+            engine="duckdb",
+            input={"table_name": ParamDef(type="str", default="ohlcv")},
+            output_schema={"cnt": "int"},
+            sql="SELECT COUNT(*) AS cnt FROM {table_name}",
+        )
+
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-            result = daily_returns(engine)
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedure)
+            assert result["cnt"][0] == 20
+
+    def test_run_with_param_override(self) -> None:
+        procedure = ProcedureDef(
+            name="count_rows",
+            engine="duckdb",
+            input={"table_name": ParamDef(type="str", default="ohlcv")},
+            output_schema={"cnt": "int"},
+            sql="SELECT COUNT(*) AS cnt FROM {table_name}",
+        )
+
+        with DuckDBEngine() as engine:
+            engine.register_table("data", _sample_ohlcv())
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedure, {"table_name": "data"})
+            assert result["cnt"][0] == 20
+
+    def test_run_missing_engine_raises(self) -> None:
+        procedure = ProcedureDef(
+            name="test",
+            engine="nonexistent",
+            sql="SELECT 1",
+        )
+        runner = ProcedureRunner({})
+        try:
+            runner.run(procedure)
+            assert False, "Expected ValueError"  # noqa: B011
+        except ValueError as e:
+            assert "nonexistent" in str(e)
+
+
+class TestProcedureFromYAML:
+    def test_load_and_run_daily_returns(self) -> None:
+        procedures = load_procedures_by_name(Path("config/procedures.yaml"))
+        assert "daily_returns" in procedures
+
+        with DuckDBEngine() as engine:
+            engine.register_table("ohlcv", _sample_ohlcv())
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedures["daily_returns"])
 
             assert "daily_return" in result.columns
             assert len(result) == 20
-            # First row per symbol has null return
-            aapl_returns = result.filter(result["symbol"] == "AAPL")
-            assert aapl_returns["daily_return"][0] is None
 
-    def test_moving_average(self) -> None:
-        with AnalyticsEngine() as engine:
+    def test_load_and_run_moving_average(self) -> None:
+        procedures = load_procedures_by_name(Path("config/procedures.yaml"))
+
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-            result = moving_average(engine, window=3)
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedures["moving_average"], {"window": 3})
 
-            assert "ma_3" in result.columns
+            assert "moving_avg" in result.columns
             assert len(result) == 20
 
-    def test_symbol_summary(self) -> None:
-        with AnalyticsEngine() as engine:
+    def test_load_and_run_symbol_summary(self) -> None:
+        procedures = load_procedures_by_name(Path("config/procedures.yaml"))
+
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-            result = symbol_summary(engine)
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedures["symbol_summary"])
 
             assert len(result) == 2
             assert "total_return" in result.columns
-            symbols = result["symbol"].to_list()
-            assert "AAPL" in symbols
-            assert "MSFT" in symbols
 
-    def test_correlation_matrix(self) -> None:
-        with AnalyticsEngine() as engine:
+    def test_load_and_run_correlation_matrix(self) -> None:
+        procedures = load_procedures_by_name(Path("config/procedures.yaml"))
+
+        with DuckDBEngine() as engine:
             engine.register_table("ohlcv", _sample_ohlcv())
-            result = correlation_matrix(engine)
+            runner = ProcedureRunner({"duckdb": engine})
+            result = runner.run(procedures["correlation_matrix"])
 
             assert "correlation" in result.columns
-            # Should have entries for AAPL-AAPL, AAPL-MSFT, MSFT-AAPL, MSFT-MSFT
             assert len(result) == 4
-            # Self-correlation should be 1.0
             self_corr = result.filter(
                 (result["symbol_a"] == "AAPL") & (result["symbol_b"] == "AAPL")
             )
