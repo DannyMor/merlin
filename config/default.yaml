@@ -1,0 +1,26 @@
+db:
+  host: localhost
+  port: 5432
+  database: merlin
+  user: merlin
+  password: merlin
+  pool_min_size: 2
+  pool_max_size: 10
+
+scheduler:
+  poll_interval_seconds: 60.0
+  batch_size: 50
+
+worker:
+  poll_interval_seconds: 5.0
+  heartbeat_interval_seconds: 15.0
+  max_concurrent_tasks: 5
+
+reaper:
+  poll_interval_seconds: 30.0
+  stale_threshold_seconds: 60.0
+  max_retries: 3
+
+logging:
+  level: INFO
+  format: "%(asctime)s %(levelname)s %(name)s: %(message)s"
