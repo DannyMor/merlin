@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -18,43 +19,41 @@ class PgTaskRepository:
     async def create(self, task: Task) -> bool:
         row = await self._db.fetch_one(
             """
-            INSERT INTO tasks (id, asset, source, data_type, from_date, to_date, status,
-                               retries, max_retries, created_at, updated_at, detail)
-            VALUES (:0, :1, :2, :3, :4, :5, :6, :7, :8, :9, :10, :11)
-            ON CONFLICT (asset, source, data_type, from_date) DO NOTHING
+            INSERT INTO tasks (id, key, "group", params, status,
+                               retries, max_retries, created_at, updated_at)
+            VALUES (:0, :1, :2, :3, :4, :5, :6, :7, :8)
+            ON CONFLICT (key) DO NOTHING
             RETURNING id
             """,
             [
                 str(task.id),
-                task.asset,
-                task.source,
-                task.data_type,
-                task.from_date,
-                task.to_date,
+                task.key,
+                task.group,
+                json.dumps(task.params),
                 task.status.value,
                 task.retries,
                 task.max_retries,
                 task.created_at,
                 task.updated_at,
-                str(task.detail),
             ],
         )
         return row is not None
 
-    async def claim(self, worker_id: UUID) -> Task | None:
+    async def claim(self, worker_id: UUID, group: str) -> Task | None:
         now = datetime.now(timezone.utc)
         row = await self._db.fetch_one(
             """
             UPDATE tasks SET status = :0, worker_id = :1, started_at = :2, updated_at = :3
             WHERE id = (
-                SELECT id FROM tasks WHERE status = 'pending'
+                SELECT id FROM tasks
+                WHERE "group" = :4 AND status = 'pending'
                 ORDER BY created_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING *
             """,
-            [TaskStatus.RUNNING.value, str(worker_id), now, now],
+            [TaskStatus.RUNNING.value, str(worker_id), now, now, group],
         )
         if row is None:
             return None
@@ -153,13 +152,14 @@ class PgTaskRepository:
         )
 
     def _row_to_task(self, row: dict[str, object]) -> Task:
+        params_raw = row.get("params", "{}")
+        params = json.loads(str(params_raw)) if isinstance(params_raw, str) else params_raw
+
         return Task(
             id=row["id"],  # pyright: ignore[reportArgumentType]
-            asset=str(row["asset"]),
-            source=str(row["source"]),
-            data_type=str(row["data_type"]),
-            from_date=row["from_date"],  # pyright: ignore[reportArgumentType]
-            to_date=row["to_date"],  # pyright: ignore[reportArgumentType]
+            key=str(row["key"]),
+            group=str(row["group"]),
+            params=params,  # pyright: ignore[reportArgumentType]
             status=TaskStatus(str(row["status"])),
             worker_id=row.get("worker_id"),  # pyright: ignore[reportArgumentType]
             retries=int(row.get("retries", 0)),  # pyright: ignore[reportArgumentType]

@@ -1,34 +1,33 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from pydantic import BaseModel
 
 from merlin.core.events.memory import InMemoryEventLog
 from merlin.core.events.models import EventLevel
+from merlin.core.tasks.interface import TaskExecutor
 from merlin.core.tasks.memory import InMemoryTaskRepository
-from merlin.core.tasks.models import Task, TaskStatus
+from merlin.core.tasks.models import Task, TaskContext, TaskStatus
 from merlin.core.tasks.worker import Worker
 
 
-class FakeExecutor:
+class FakeParams(BaseModel):
+    value: str = "test"
+
+
+class FakeExecutor(TaskExecutor[FakeParams]):
     def __init__(self, *, fail: bool = False) -> None:
-        self.executed: list[Task] = []
+        self.executed: list[tuple[TaskContext, FakeParams]] = []
         self._fail = fail
 
-    async def execute(self, task: Task) -> None:
-        self.executed.append(task)
+    async def execute(self, ctx: TaskContext, params: FakeParams) -> None:
+        self.executed.append((ctx, params))
         if self._fail:
             msg = "Simulated failure"
             raise RuntimeError(msg)
 
 
-def _make_task(asset: str = "AAPL") -> Task:
-    return Task(
-        asset=asset,
-        source="yahoo",
-        data_type="ohlcv",
-        from_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        to_date=datetime(2025, 1, 31, tzinfo=timezone.utc),
-    )
+def _make_task(key: str = "test:1", group: str = "test") -> Task:
+    return Task(key=key, group=group, params={"value": "hello"})
 
 
 class TestWorker:
@@ -36,7 +35,7 @@ class TestWorker:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         executor = FakeExecutor()
-        worker = Worker(repo, event_log, executor)
+        worker = Worker(repo, event_log, executor, group="test")
 
         task = _make_task()
         await repo.create(task)
@@ -45,6 +44,9 @@ class TestWorker:
 
         assert processed is True
         assert len(executor.executed) == 1
+        ctx, params = executor.executed[0]
+        assert ctx.key == "test:1"
+        assert params.value == "hello"
         result = await repo.get(task.id)
         assert result is not None
         assert result.status == TaskStatus.COMPLETED
@@ -53,7 +55,7 @@ class TestWorker:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         executor = FakeExecutor()
-        worker = Worker(repo, event_log, executor)
+        worker = Worker(repo, event_log, executor, group="test")
 
         processed = await worker.tick()
         assert processed is False
@@ -62,7 +64,7 @@ class TestWorker:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         executor = FakeExecutor(fail=True)
-        worker = Worker(repo, event_log, executor)
+        worker = Worker(repo, event_log, executor, group="test")
 
         task = _make_task()
         await repo.create(task)
@@ -79,7 +81,7 @@ class TestWorker:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         executor = FakeExecutor()
-        worker = Worker(repo, event_log, executor)
+        worker = Worker(repo, event_log, executor, group="test")
 
         await repo.create(_make_task())
         await worker.tick()
@@ -93,7 +95,7 @@ class TestWorker:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         executor = FakeExecutor(fail=True)
-        worker = Worker(repo, event_log, executor)
+        worker = Worker(repo, event_log, executor, group="test")
 
         await repo.create(_make_task())
         await worker.tick()
@@ -101,3 +103,20 @@ class TestWorker:
         events = await event_log.query(level=EventLevel.ERROR)
         assert len(events) == 1
         assert events[0].action == "task_failed"
+
+    async def test_tick_only_claims_from_own_group(self) -> None:
+        repo = InMemoryTaskRepository()
+        event_log = InMemoryEventLog()
+        executor = FakeExecutor()
+        worker = Worker(repo, event_log, executor, group="other")
+
+        await repo.create(_make_task(group="test"))
+
+        processed = await worker.tick()
+        assert processed is False
+
+    async def test_parse_params_auto_extraction(self) -> None:
+        executor = FakeExecutor()
+        params = executor.parse_params({"value": "parsed"})
+        assert isinstance(params, FakeParams)
+        assert params.value == "parsed"

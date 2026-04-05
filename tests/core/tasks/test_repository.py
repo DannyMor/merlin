@@ -6,18 +6,8 @@ from merlin.core.tasks.memory import InMemoryTaskRepository
 from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
 
 
-def _make_task(
-    asset: str = "AAPL",
-    source: str = "yahoo",
-    data_type: str = "ohlcv",
-) -> Task:
-    return Task(
-        asset=asset,
-        source=source,
-        data_type=data_type,
-        from_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        to_date=datetime(2025, 1, 31, tzinfo=timezone.utc),
-    )
+def _make_task(key: str = "test:AAPL:ohlcv", group: str = "test") -> Task:
+    return Task(key=key, group=group, params={"asset": "AAPL"})
 
 
 class TestInMemoryTaskRepository:
@@ -28,7 +18,7 @@ class TestInMemoryTaskRepository:
 
         result = await repo.get(task.id)
         assert result is not None
-        assert result.asset == "AAPL"
+        assert result.key == "test:AAPL:ohlcv"
 
     async def test_create_duplicate_rejected(self) -> None:
         repo = InMemoryTaskRepository()
@@ -47,10 +37,23 @@ class TestInMemoryTaskRepository:
         task2 = _make_task()
         assert await repo.create(task2) is True
 
-    async def test_create_different_assets_allowed(self) -> None:
+    async def test_create_different_keys_allowed(self) -> None:
         repo = InMemoryTaskRepository()
-        assert await repo.create(_make_task(asset="AAPL")) is True
-        assert await repo.create(_make_task(asset="MSFT")) is True
+        assert await repo.create(_make_task(key="test:AAPL:ohlcv")) is True
+        assert await repo.create(_make_task(key="test:MSFT:ohlcv")) is True
+
+    async def test_claim_filters_by_group(self) -> None:
+        repo = InMemoryTaskRepository()
+        worker = WorkerInfo(hostname="test")
+        await repo.register_worker(worker)
+
+        await repo.create(_make_task(key="a:1", group="group_a"))
+        await repo.create(_make_task(key="b:1", group="group_b"))
+
+        claimed = await repo.claim(worker.id, "group_b")
+        assert claimed is not None
+        assert claimed.group == "group_b"
+        assert claimed.key == "b:1"
 
     async def test_claim(self) -> None:
         repo = InMemoryTaskRepository()
@@ -60,7 +63,7 @@ class TestInMemoryTaskRepository:
         task = _make_task()
         await repo.create(task)
 
-        claimed = await repo.claim(worker.id)
+        claimed = await repo.claim(worker.id, "test")
         assert claimed is not None
         assert claimed.status == TaskStatus.RUNNING
         assert claimed.worker_id == worker.id
@@ -69,7 +72,7 @@ class TestInMemoryTaskRepository:
     async def test_claim_empty(self) -> None:
         repo = InMemoryTaskRepository()
         worker = WorkerInfo(hostname="test")
-        result = await repo.claim(worker.id)
+        result = await repo.claim(worker.id, "test")
         assert result is None
 
     async def test_update_status(self) -> None:
@@ -98,22 +101,22 @@ class TestInMemoryTaskRepository:
 
     async def test_find_by_status(self) -> None:
         repo = InMemoryTaskRepository()
-        t1 = _make_task(asset="AAPL")
-        t2 = _make_task(asset="MSFT")
+        t1 = _make_task(key="test:AAPL:ohlcv")
+        t2 = _make_task(key="test:MSFT:ohlcv")
         await repo.create(t1)
         await repo.create(t2)
         await repo.update_status(t1.id, TaskStatus.COMPLETED)
 
         pending = await repo.find_by_status(TaskStatus.PENDING)
         assert len(pending) == 1
-        assert pending[0].asset == "MSFT"
+        assert pending[0].key == "test:MSFT:ohlcv"
 
     async def test_find_stale_no_worker(self) -> None:
         repo = InMemoryTaskRepository()
         task = _make_task()
         await repo.create(task)
         worker = WorkerInfo(hostname="test")
-        claimed = await repo.claim(worker.id)
+        claimed = await repo.claim(worker.id, "test")
         assert claimed is not None
 
         # Worker not registered, so task is stale
@@ -128,7 +131,7 @@ class TestInMemoryTaskRepository:
 
         task = _make_task()
         await repo.create(task)
-        await repo.claim(worker.id)
+        await repo.claim(worker.id, "test")
 
         stale = await repo.find_stale(60.0)
         assert len(stale) == 1

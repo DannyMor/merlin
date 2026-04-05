@@ -7,7 +7,7 @@ from pathlib import Path
 
 import yaml
 
-from merlin.app.market.tasks.ingest import MarketScheduleSource
+from merlin.app.market.tasks.ingest import MarketIngestSchedule
 from merlin.core.config.loader import load_config
 from merlin.core.db.timescaledb import TimescaleDB
 from merlin.core.events.pg import PgEventLog
@@ -45,12 +45,12 @@ async def run() -> None:
 
         assets = _load_asset_symbols()
         data_types = [DataType.OHLCV, DataType.DIVIDENDS, DataType.SPLITS]
-        schedule_source = MarketScheduleSource(assets, data_types)
+        schedule = MarketIngestSchedule(assets, data_types)
 
         scheduler = Scheduler(
             repo,
             event_log,
-            [schedule_source],
+            [schedule],
             poll_interval=config.scheduler.poll_interval_seconds,
         )
 

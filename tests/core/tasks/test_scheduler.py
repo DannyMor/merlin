@@ -1,37 +1,35 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from merlin.core.events.memory import InMemoryEventLog
 from merlin.core.tasks.memory import InMemoryTaskRepository
 from merlin.core.tasks.models import Task, TaskStatus
 from merlin.core.tasks.scheduler import Scheduler
 
 
-class FakeScheduleSource:
+class FakeTaskSchedule:
     def __init__(self, tasks: list[Task]) -> None:
         self.tasks = tasks
+
+    @property
+    def schedule(self) -> str:
+        return "@daily"
 
     async def generate_tasks(self) -> list[Task]:
         return self.tasks
 
 
-def _make_task(asset: str = "AAPL") -> Task:
-    return Task(
-        asset=asset,
-        source="yahoo",
-        data_type="ohlcv",
-        from_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        to_date=datetime(2025, 1, 31, tzinfo=timezone.utc),
-    )
+def _make_task(key: str = "test:AAPL:ohlcv", group: str = "test") -> Task:
+    return Task(key=key, group=group)
 
 
 class TestScheduler:
     async def test_tick_creates_tasks(self) -> None:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
-        source = FakeScheduleSource([_make_task("AAPL"), _make_task("MSFT")])
-        scheduler = Scheduler(repo, event_log, [source])
+        schedule = FakeTaskSchedule(
+            [_make_task(key="test:AAPL:ohlcv"), _make_task(key="test:MSFT:ohlcv")]
+        )
+        scheduler = Scheduler(repo, event_log, [schedule])
 
         created = await scheduler.tick()
 
@@ -43,12 +41,12 @@ class TestScheduler:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
         task = _make_task()
-        source = FakeScheduleSource([task])
-        scheduler = Scheduler(repo, event_log, [source])
+        schedule = FakeTaskSchedule([task])
+        scheduler = Scheduler(repo, event_log, [schedule])
 
         await scheduler.tick()
-        # Same task again — duplicate source/asset/data_type/from_date
-        source.tasks = [_make_task()]
+        # Same key again — duplicate
+        schedule.tasks = [_make_task()]
         created = await scheduler.tick()
 
         assert created == 0
@@ -56,8 +54,8 @@ class TestScheduler:
     async def test_tick_emits_events(self) -> None:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
-        source = FakeScheduleSource([_make_task()])
-        scheduler = Scheduler(repo, event_log, [source])
+        schedule = FakeTaskSchedule([_make_task()])
+        scheduler = Scheduler(repo, event_log, [schedule])
 
         await scheduler.tick()
 
@@ -65,11 +63,11 @@ class TestScheduler:
         assert len(events) == 1
         assert events[0].action == "task_created"
 
-    async def test_tick_multiple_sources(self) -> None:
+    async def test_tick_multiple_schedules(self) -> None:
         repo = InMemoryTaskRepository()
         event_log = InMemoryEventLog()
-        s1 = FakeScheduleSource([_make_task("AAPL")])
-        s2 = FakeScheduleSource([_make_task("MSFT")])
+        s1 = FakeTaskSchedule([_make_task(key="test:AAPL:ohlcv")])
+        s2 = FakeTaskSchedule([_make_task(key="test:MSFT:ohlcv")])
         scheduler = Scheduler(repo, event_log, [s1, s2])
 
         created = await scheduler.tick()

@@ -8,7 +8,7 @@ from merlin.core.events.models import Event, EventLevel, EventSource
 
 if TYPE_CHECKING:
     from merlin.core.events.interface import EventLog
-    from merlin.core.tasks.interface import ScheduleSource, TaskRepository
+    from merlin.core.tasks.interface import TaskRepository, TaskSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -18,20 +18,20 @@ class Scheduler:
         self,
         repository: TaskRepository,
         event_log: EventLog,
-        sources: list[ScheduleSource],
+        schedules: list[TaskSchedule],
         poll_interval: float = 60.0,
     ) -> None:
         self._repo = repository
         self._event_log = event_log
-        self._sources = sources
+        self._schedules = schedules
         self._poll_interval = poll_interval
         self._running = False
 
     async def tick(self) -> int:
         """Run one scheduling cycle. Returns number of tasks created."""
         created = 0
-        for source in self._sources:
-            tasks = await source.generate_tasks()
+        for schedule in self._schedules:
+            tasks = await schedule.generate_tasks()
             for task in tasks:
                 if await self._repo.create(task):
                     created += 1
@@ -43,8 +43,8 @@ class Scheduler:
                             action="task_created",
                             detail={
                                 "task_id": str(task.id),
-                                "asset": task.asset,
-                                "data_type": task.data_type,
+                                "key": task.key,
+                                "group": task.group,
                             },
                         )
                     )

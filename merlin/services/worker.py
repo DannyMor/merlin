@@ -39,6 +39,7 @@ async def run() -> None:
             repo,
             event_log,
             executor,
+            group="market.ingest",
             poll_interval=config.worker.poll_interval_seconds,
             heartbeat_interval=config.worker.heartbeat_interval_seconds,
         )

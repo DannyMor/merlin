@@ -9,14 +9,8 @@ from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
 from merlin.core.tasks.reaper import Reaper
 
 
-def _make_task(asset: str = "AAPL") -> Task:
-    return Task(
-        asset=asset,
-        source="yahoo",
-        data_type="ohlcv",
-        from_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-        to_date=datetime(2025, 1, 31, tzinfo=timezone.utc),
-    )
+def _make_task(key: str = "test:AAPL:ohlcv", group: str = "test") -> Task:
+    return Task(key=key, group=group)
 
 
 def _dead_worker() -> WorkerInfo:
@@ -36,7 +30,7 @@ class TestReaper:
 
         task = _make_task()
         await repo.create(task)
-        await repo.claim(worker.id)
+        await repo.claim(worker.id, "test")
 
         reaped = await reaper.tick()
 
@@ -56,7 +50,7 @@ class TestReaper:
         task = _make_task()
         task.retries = 2
         await repo.create(task)
-        await repo.claim(worker.id)
+        await repo.claim(worker.id, "test")
 
         reaped = await reaper.tick()
 
@@ -75,7 +69,7 @@ class TestReaper:
 
         task = _make_task()
         await repo.create(task)
-        await repo.claim(worker.id)
+        await repo.claim(worker.id, "test")
 
         await reaper.tick()
 
@@ -93,7 +87,7 @@ class TestReaper:
 
         task = _make_task()
         await repo.create(task)
-        await repo.claim(worker.id)
+        await repo.claim(worker.id, "test")
 
         await reaper.tick()
 
