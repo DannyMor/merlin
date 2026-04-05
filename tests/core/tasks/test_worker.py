@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from typing import TYPE_CHECKING
+
 from pydantic import BaseModel
 
 from merlin.core.events.memory import InMemoryEventLog
@@ -8,6 +11,9 @@ from merlin.core.tasks.interface import TaskExecutor
 from merlin.core.tasks.memory import InMemoryTaskRepository
 from merlin.core.tasks.models import Task, TaskContext, TaskStatus
 from merlin.core.tasks.worker import Worker
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class FakeParams(BaseModel):
@@ -120,3 +126,65 @@ class TestWorker:
         params = executor.parse_params({"value": "parsed"})
         assert isinstance(params, FakeParams)
         assert params.value == "parsed"
+
+    async def test_self_terminates_on_heartbeat_failure(self) -> None:
+        repo = InMemoryTaskRepository()
+        event_log = InMemoryEventLog()
+        executor = FakeExecutor()
+
+        # Override heartbeat to always fail
+        async def failing_heartbeat(worker_id: UUID) -> None:
+            raise ConnectionError("DB unavailable")
+
+        repo.heartbeat = failing_heartbeat  # type: ignore[assignment]
+
+        worker = Worker(
+            repo,
+            event_log,
+            executor,
+            group="test",
+            poll_interval=0.01,
+            heartbeat_interval=0.01,
+            max_heartbeat_failures=2,
+        )
+
+        # run() should exit because heartbeat failures trigger self-termination
+        await worker.run()
+
+        assert worker.liveness_failed is True
+
+    async def test_heartbeat_recovers_from_transient_failure(self) -> None:
+        repo = InMemoryTaskRepository()
+        event_log = InMemoryEventLog()
+        executor = FakeExecutor()
+
+        call_count = 0
+        original_heartbeat = repo.heartbeat
+
+        async def sometimes_failing_heartbeat(worker_id: UUID) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("Transient failure")
+            await original_heartbeat(worker_id)
+
+        repo.heartbeat = sometimes_failing_heartbeat  # type: ignore[assignment]
+
+        worker = Worker(
+            repo,
+            event_log,
+            executor,
+            group="test",
+            poll_interval=0.01,
+            heartbeat_interval=0.01,
+            max_heartbeat_failures=3,
+        )
+
+        # Run briefly — should not self-terminate since failure is transient
+        async def stop_after_delay() -> None:
+            await asyncio.sleep(0.1)
+            worker.stop()
+
+        await asyncio.gather(worker.run(), stop_after_delay())
+
+        assert worker.liveness_failed is False

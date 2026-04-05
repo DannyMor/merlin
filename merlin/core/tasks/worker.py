@@ -24,6 +24,7 @@ class Worker:
         group: str,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 15.0,
+        max_heartbeat_failures: int = 3,
     ) -> None:
         self._repo = repository
         self._event_log = event_log
@@ -31,16 +32,41 @@ class Worker:
         self._group = group
         self._poll_interval = poll_interval
         self._heartbeat_interval = heartbeat_interval
+        self._max_heartbeat_failures = max_heartbeat_failures
         self._info = WorkerInfo(hostname=platform.node())
         self._running = False
+        self._liveness_failed = False
 
     @property
     def worker_id(self) -> WorkerInfo:
         return self._info
 
+    @property
+    def liveness_failed(self) -> bool:
+        return self._liveness_failed
+
     async def _heartbeat_loop(self) -> None:
+        consecutive_failures = 0
         while self._running:
-            await self._repo.heartbeat(self._info.id)
+            try:
+                await self._repo.heartbeat(self._info.id)
+                consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                logger.exception(
+                    "Heartbeat failed (%d/%d)",
+                    consecutive_failures,
+                    self._max_heartbeat_failures,
+                )
+                if consecutive_failures >= self._max_heartbeat_failures:
+                    logger.critical(
+                        "Worker %s self-terminating: %d consecutive heartbeat failures",
+                        self._info.id,
+                        consecutive_failures,
+                    )
+                    self._liveness_failed = True
+                    self._running = False
+                    return
             await asyncio.sleep(self._heartbeat_interval)
 
     async def tick(self) -> bool:
