@@ -6,13 +6,13 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from merlin.core.sources.interface import DataType
+from merlin.app.market.sources.interface import DataType
 from merlin.core.tasks.interface import TaskExecutor
 from merlin.core.tasks.models import Task
 
 if TYPE_CHECKING:
+    from merlin.app.market.sources.interface import DataSource
     from merlin.core.db.interface import Database
-    from merlin.core.sources.interface import DataSource
     from merlin.core.tasks.models import TaskContext
 
 logger = logging.getLogger(__name__)

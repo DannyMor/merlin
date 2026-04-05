@@ -5,13 +5,13 @@ from unittest.mock import MagicMock
 
 import pyarrow as pa
 
-from merlin.app.market.sources.yahoo import (
-    YahooFinanceSource,
+from merlin.app.market.sources.interface import DataSource, DataType
+from merlin.app.market.sources.schemas import (
     empty_dividends_table,
     empty_ohlcv_table,
     empty_splits_table,
 )
-from merlin.core.sources.interface import DataSource, DataType
+from merlin.app.market.sources.yahoo import YahooFinanceSource
 
 
 def _mock_ohlcv_ticker() -> MagicMock:

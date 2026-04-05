@@ -7,13 +7,13 @@ import pyarrow as pa
 if TYPE_CHECKING:
     from datetime import date
 
+from merlin.app.market.sources.interface import DataType
 from merlin.app.market.tasks.ingest import (
     MarketIngestExecutor,
     MarketIngestParams,
     MarketIngestSchedule,
 )
 from merlin.core.db.memory import InMemoryDatabase
-from merlin.core.sources.interface import DataType
 from merlin.core.tasks.models import Task, TaskContext
 
 

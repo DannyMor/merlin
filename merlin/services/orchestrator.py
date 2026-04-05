@@ -7,11 +7,11 @@ from pathlib import Path
 
 import yaml
 
+from merlin.app.market.sources.interface import DataType
 from merlin.app.market.tasks.ingest import MarketIngestSchedule
 from merlin.core.config.loader import load_config
 from merlin.core.db.timescaledb import TimescaleDB
 from merlin.core.events.pg import PgEventLog
-from merlin.core.sources.interface import DataType
 from merlin.core.tasks.reaper import Reaper
 from merlin.core.tasks.scheduler import Scheduler
 

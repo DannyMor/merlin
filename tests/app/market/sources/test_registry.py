@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from merlin.core.sources.interface import DataSource, DataType
-from merlin.core.sources.registry import SourceRegistry
+from merlin.app.market.sources.interface import DataSource, DataType
+from merlin.app.market.sources.registry import SourceRegistry
+
+if TYPE_CHECKING:
+    from datetime import date
 
 
 class FakeSource:
@@ -96,6 +99,8 @@ class TestSourceRegistry:
         assert len(registry.all_sources()) == 1
 
     async def test_fake_source_fetch(self) -> None:
+        from datetime import date
+
         source = _ohlcv_source()
         table = await source.fetch("AAPL", DataType.OHLCV, date(2025, 1, 1), date(2025, 1, 31))
 
