@@ -33,9 +33,11 @@ async def run() -> None:
     await db.connect()
 
     try:
+        from merlin.app.market.db.migrations import ensure_market_schema
         from merlin.core.db.migrations import ensure_schema
 
         await ensure_schema(db)
+        await ensure_market_schema(db)
 
         event_log = PgEventLog(db)
 

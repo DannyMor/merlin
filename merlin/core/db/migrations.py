@@ -8,7 +8,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 4
 
 MIGRATIONS: list[str] = [
     # Version 1: schema_version table
@@ -31,15 +31,13 @@ MIGRATIONS: list[str] = [
         correlation_id UUID
     )
     """,
-    # Version 3: tasks table
+    # Version 3: tasks table (generic — no domain-specific columns)
     """
     CREATE TABLE IF NOT EXISTS tasks (
         id UUID PRIMARY KEY,
-        asset TEXT NOT NULL,
-        source TEXT NOT NULL,
-        data_type TEXT NOT NULL,
-        from_date TIMESTAMPTZ NOT NULL,
-        to_date TIMESTAMPTZ NOT NULL,
+        key TEXT NOT NULL UNIQUE,
+        "group" TEXT NOT NULL,
+        params JSONB NOT NULL DEFAULT '{}',
         status TEXT NOT NULL DEFAULT 'pending',
         worker_id UUID,
         retries INTEGER NOT NULL DEFAULT 0,
@@ -48,10 +46,14 @@ MIGRATIONS: list[str] = [
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         started_at TIMESTAMPTZ,
         completed_at TIMESTAMPTZ,
-        error TEXT,
-        detail JSONB NOT NULL DEFAULT '{}',
-        UNIQUE (asset, source, data_type, from_date)
-    )
+        error TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_tasks_claim
+        ON tasks ("group", status, created_at) WHERE status = 'pending';
+    CREATE INDEX IF NOT EXISTS idx_tasks_running
+        ON tasks (status) WHERE status = 'running';
+    CREATE INDEX IF NOT EXISTS idx_tasks_worker
+        ON tasks (worker_id) WHERE worker_id IS NOT NULL;
     """,
     # Version 4: workers table
     """
@@ -60,30 +62,6 @@ MIGRATIONS: list[str] = [
         hostname TEXT NOT NULL,
         started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         last_heartbeat TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-    """,
-    # Version 5: assets table
-    """
-    CREATE TABLE IF NOT EXISTS assets (
-        symbol TEXT PRIMARY KEY,
-        name TEXT NOT NULL,
-        asset_type TEXT NOT NULL,
-        exchange TEXT NOT NULL DEFAULT '',
-        active BOOLEAN NOT NULL DEFAULT TRUE
-    )
-    """,
-    # Version 6: market_ohlcv hypertable
-    """
-    CREATE TABLE IF NOT EXISTS market_ohlcv (
-        symbol TEXT NOT NULL,
-        market_date DATE NOT NULL,
-        open DOUBLE PRECISION NOT NULL,
-        high DOUBLE PRECISION NOT NULL,
-        low DOUBLE PRECISION NOT NULL,
-        close DOUBLE PRECISION NOT NULL,
-        volume BIGINT NOT NULL,
-        adjusted_close DOUBLE PRECISION,
-        PRIMARY KEY (symbol, market_date)
     )
     """,
 ]
