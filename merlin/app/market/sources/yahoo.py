@@ -10,7 +10,12 @@ from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from merlin.core.sources.interface import DataType
+from merlin.app.market.sources.interface import DataType
+from merlin.app.market.sources.schemas import (
+    empty_dividends_table,
+    empty_ohlcv_table,
+    empty_splits_table,
+)
 
 if TYPE_CHECKING:
     from datetime import date
@@ -20,41 +25,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SUPPORTED_TYPES = frozenset({DataType.OHLCV, DataType.DIVIDENDS, DataType.SPLITS})
-
-
-def empty_ohlcv_table() -> pa.Table:
-    return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "open": pa.array([], type=pa.float64()),
-            "high": pa.array([], type=pa.float64()),
-            "low": pa.array([], type=pa.float64()),
-            "close": pa.array([], type=pa.float64()),
-            "volume": pa.array([], type=pa.int64()),
-            "adjusted_close": pa.array([], type=pa.float64()),
-        }
-    )
-
-
-def empty_dividends_table() -> pa.Table:
-    return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "amount": pa.array([], type=pa.float64()),
-        }
-    )
-
-
-def empty_splits_table() -> pa.Table:
-    return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "ratio": pa.array([], type=pa.float64()),
-        }
-    )
 
 
 class YahooFinanceSource:

@@ -16,13 +16,9 @@ class InMemoryTaskRepository:
         self._tasks: dict[str, Task] = {}
         self._workers: dict[str, WorkerInfo] = {}
 
-    def _dedup_key(self, task: Task) -> str:
-        return f"{task.asset}|{task.source}|{task.data_type}|{task.from_date.isoformat()}"
-
     async def create(self, task: Task) -> bool:
-        key = self._dedup_key(task)
         for existing in self._tasks.values():
-            if self._dedup_key(existing) == key and existing.status in (
+            if existing.key == task.key and existing.status in (
                 TaskStatus.PENDING,
                 TaskStatus.RUNNING,
             ):
@@ -30,9 +26,9 @@ class InMemoryTaskRepository:
         self._tasks[str(task.id)] = task
         return True
 
-    async def claim(self, worker_id: UUID) -> Task | None:
+    async def claim(self, worker_id: UUID, group: str) -> Task | None:
         for task in self._tasks.values():
-            if task.status == TaskStatus.PENDING:
+            if task.status == TaskStatus.PENDING and task.group == group:
                 task.status = TaskStatus.RUNNING
                 task.worker_id = worker_id
                 task.started_at = datetime.now(timezone.utc)

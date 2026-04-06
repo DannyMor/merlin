@@ -18,11 +18,9 @@ class TaskStatus(StrEnum):
 
 class Task(BaseModel):
     id: UUID = Field(default_factory=uuid4)
-    asset: str
-    source: str
-    data_type: str
-    from_date: datetime
-    to_date: datetime
+    key: str
+    group: str
+    params: dict[str, Any] = Field(default_factory=dict)
     status: TaskStatus = TaskStatus.PENDING
     worker_id: UUID | None = None
     retries: int = 0
@@ -32,7 +30,16 @@ class Task(BaseModel):
     started_at: datetime | None = None
     completed_at: datetime | None = None
     error: str | None = None
-    detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class TaskContext(BaseModel):
+    """Read-only metadata exposed to task executors."""
+
+    id: UUID
+    key: str
+    group: str
+    retries: int
+    created_at: datetime
 
 
 class WorkerInfo(BaseModel):

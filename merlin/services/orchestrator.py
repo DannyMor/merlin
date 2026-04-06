@@ -5,23 +5,14 @@ import logging
 import signal
 from pathlib import Path
 
-import yaml
-
-from merlin.app.market.tasks.ingest import MarketScheduleSource
+from merlin.app.market.bootstrap import setup_market_schedules
 from merlin.core.config.loader import load_config
 from merlin.core.db.timescaledb import TimescaleDB
 from merlin.core.events.pg import PgEventLog
-from merlin.core.sources.interface import DataType
 from merlin.core.tasks.reaper import Reaper
 from merlin.core.tasks.scheduler import Scheduler
 
 logger = logging.getLogger(__name__)
-
-
-def _load_asset_symbols(path: str = "config/assets.yaml") -> list[str]:
-    with open(path) as f:
-        data = yaml.safe_load(f)
-    return [str(asset["symbol"]) for asset in data.get("assets", [])]
 
 
 async def run() -> None:
@@ -33,9 +24,11 @@ async def run() -> None:
     await db.connect()
 
     try:
+        from merlin.app.market.db.migrations import ensure_market_schema
         from merlin.core.db.migrations import ensure_schema
 
         await ensure_schema(db)
+        await ensure_market_schema(db)
 
         event_log = PgEventLog(db)
 
@@ -43,14 +36,12 @@ async def run() -> None:
 
         repo = PgTaskRepository(db)
 
-        assets = _load_asset_symbols()
-        data_types = [DataType.OHLCV, DataType.DIVIDENDS, DataType.SPLITS]
-        schedule_source = MarketScheduleSource(assets, data_types)
+        schedules = setup_market_schedules()
 
         scheduler = Scheduler(
             repo,
             event_log,
-            [schedule_source],
+            schedules,
             poll_interval=config.scheduler.poll_interval_seconds,
         )
 

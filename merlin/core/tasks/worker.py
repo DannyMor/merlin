@@ -3,10 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from merlin.core.events.models import Event, EventLevel, EventSource
-from merlin.core.tasks.models import TaskStatus, WorkerInfo
+from merlin.core.tasks.models import TaskContext, TaskStatus, WorkerInfo
 
 if TYPE_CHECKING:
     from merlin.core.events.interface import EventLog
@@ -20,32 +20,68 @@ class Worker:
         self,
         repository: TaskRepository,
         event_log: EventLog,
-        executor: TaskExecutor,
+        executor: TaskExecutor[Any],
+        group: str,
         poll_interval: float = 5.0,
         heartbeat_interval: float = 15.0,
+        max_heartbeat_failures: int = 3,
     ) -> None:
         self._repo = repository
         self._event_log = event_log
         self._executor = executor
+        self._group = group
         self._poll_interval = poll_interval
         self._heartbeat_interval = heartbeat_interval
+        self._max_heartbeat_failures = max_heartbeat_failures
         self._info = WorkerInfo(hostname=platform.node())
         self._running = False
+        self._liveness_failed = False
 
     @property
     def worker_id(self) -> WorkerInfo:
         return self._info
 
+    @property
+    def liveness_failed(self) -> bool:
+        return self._liveness_failed
+
     async def _heartbeat_loop(self) -> None:
+        consecutive_failures = 0
         while self._running:
-            await self._repo.heartbeat(self._info.id)
+            try:
+                await self._repo.heartbeat(self._info.id)
+                consecutive_failures = 0
+            except Exception:
+                consecutive_failures += 1
+                logger.exception(
+                    "Heartbeat failed (%d/%d)",
+                    consecutive_failures,
+                    self._max_heartbeat_failures,
+                )
+                if consecutive_failures >= self._max_heartbeat_failures:
+                    logger.critical(
+                        "Worker %s self-terminating: %d consecutive heartbeat failures",
+                        self._info.id,
+                        consecutive_failures,
+                    )
+                    self._liveness_failed = True
+                    self._running = False
+                    return
             await asyncio.sleep(self._heartbeat_interval)
 
     async def tick(self) -> bool:
         """Try to claim and execute one task. Returns True if a task was processed."""
-        task = await self._repo.claim(self._info.id)
+        task = await self._repo.claim(self._info.id, self._group)
         if task is None:
             return False
+
+        ctx = TaskContext(
+            id=task.id,
+            key=task.key,
+            group=task.group,
+            retries=task.retries,
+            created_at=task.created_at,
+        )
 
         await self._event_log.emit(
             Event(
@@ -53,12 +89,13 @@ class Worker:
                 level=EventLevel.INFO,
                 component="worker",
                 action="task_started",
-                detail={"task_id": str(task.id), "asset": task.asset},
+                detail={"task_id": str(task.id), "key": task.key},
             )
         )
 
         try:
-            await self._executor.execute(task)
+            params = self._executor.parse_params(task.params)
+            await self._executor.execute(ctx, params)
             await self._repo.update_status(task.id, TaskStatus.COMPLETED)
             await self._event_log.emit(
                 Event(
@@ -66,7 +103,7 @@ class Worker:
                     level=EventLevel.INFO,
                     component="worker",
                     action="task_completed",
-                    detail={"task_id": str(task.id), "asset": task.asset},
+                    detail={"task_id": str(task.id), "key": task.key},
                 )
             )
         except Exception as exc:
@@ -80,7 +117,7 @@ class Worker:
                     action="task_failed",
                     detail={
                         "task_id": str(task.id),
-                        "asset": task.asset,
+                        "key": task.key,
                         "error": error_msg,
                     },
                 )
@@ -92,7 +129,7 @@ class Worker:
     async def run(self) -> None:
         self._running = True
         await self._repo.register_worker(self._info)
-        logger.info("Worker %s starting", self._info.id)
+        logger.info("Worker %s starting (group=%s)", self._info.id, self._group)
 
         heartbeat_task = asyncio.create_task(self._heartbeat_loop())
         try:

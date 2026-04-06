@@ -1,13 +1,20 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
-from merlin.app.market.tasks.ingest import MarketIngestExecutor, MarketScheduleSource
+if TYPE_CHECKING:
+    from datetime import date
+
+from merlin.app.market.sources.interface import DataType
+from merlin.app.market.tasks.ingest import (
+    MarketIngestExecutor,
+    MarketIngestParams,
+    MarketIngestSchedule,
+)
 from merlin.core.db.memory import InMemoryDatabase
-from merlin.core.sources.interface import DataType
-from merlin.core.tasks.models import Task
+from merlin.core.tasks.models import Task, TaskContext
 
 
 class FakeSource:
@@ -41,23 +48,53 @@ class TestMarketIngestExecutor:
         executor = MarketIngestExecutor(source, db)
 
         task = Task(
-            asset="AAPL",
-            source="fake",
-            data_type="ohlcv",
-            from_date=datetime(2025, 1, 1, tzinfo=timezone.utc),
-            to_date=datetime(2025, 1, 31, tzinfo=timezone.utc),
+            key="market:ingest:AAPL:ohlcv:2025-01-01",
+            group="market.ingest",
+            params={
+                "asset": "AAPL",
+                "source": "fake",
+                "data_type": "ohlcv",
+                "from_date": "2025-01-01",
+                "to_date": "2025-01-31",
+            },
         )
+        ctx = TaskContext(
+            id=task.id,
+            key=task.key,
+            group=task.group,
+            retries=task.retries,
+            created_at=task.created_at,
+        )
+        params = executor.parse_params(task.params)
 
-        await executor.execute(task)
+        await executor.execute(ctx, params)
 
         assert len(source.fetched) == 1
         assert source.fetched[0][0] == "AAPL"
         assert source.fetched[0][1] == DataType.OHLCV
 
+    async def test_parse_params(self) -> None:
+        source = FakeSource()
+        db = InMemoryDatabase()
+        await db.connect()
+        executor = MarketIngestExecutor(source, db)
 
-class TestMarketScheduleSource:
+        params = executor.parse_params(
+            {
+                "asset": "MSFT",
+                "source": "yahoo",
+                "data_type": "ohlcv",
+                "from_date": "2025-01-01",
+                "to_date": "2025-01-31",
+            }
+        )
+        assert isinstance(params, MarketIngestParams)
+        assert params.asset == "MSFT"
+
+
+class TestMarketIngestSchedule:
     async def test_generate_tasks(self) -> None:
-        schedule = MarketScheduleSource(
+        schedule = MarketIngestSchedule(
             assets=["AAPL", "MSFT"],
             data_types=[DataType.OHLCV],
             source_name="yahoo",
@@ -67,13 +104,14 @@ class TestMarketScheduleSource:
         tasks = await schedule.generate_tasks()
 
         assert len(tasks) == 2
-        symbols = {t.asset for t in tasks}
-        assert symbols == {"AAPL", "MSFT"}
-        assert all(t.source == "yahoo" for t in tasks)
-        assert all(t.data_type == "ohlcv" for t in tasks)
+        keys = {t.key for t in tasks}
+        assert any("AAPL" in k for k in keys)
+        assert any("MSFT" in k for k in keys)
+        assert all(t.group == "market.ingest" for t in tasks)
+        assert all(t.params["source"] == "yahoo" for t in tasks)
 
     async def test_generate_tasks_multiple_data_types(self) -> None:
-        schedule = MarketScheduleSource(
+        schedule = MarketIngestSchedule(
             assets=["AAPL"],
             data_types=[DataType.OHLCV, DataType.DIVIDENDS],
         )
@@ -81,5 +119,12 @@ class TestMarketScheduleSource:
         tasks = await schedule.generate_tasks()
 
         assert len(tasks) == 2
-        data_types = {t.data_type for t in tasks}
+        data_types = {t.params["data_type"] for t in tasks}
         assert data_types == {"ohlcv", "dividends"}
+
+    def test_schedule_property(self) -> None:
+        schedule = MarketIngestSchedule(
+            assets=["AAPL"],
+            data_types=[DataType.OHLCV],
+        )
+        assert schedule.schedule == "@daily"
