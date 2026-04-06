@@ -5,8 +5,7 @@ import logging
 import signal
 from pathlib import Path
 
-from merlin.app.market.sources.yahoo import YahooFinanceSource
-from merlin.app.market.tasks.ingest import MarketIngestExecutor
+from merlin.app.market.bootstrap import setup_market_worker
 from merlin.core.config.loader import load_config
 from merlin.core.db.timescaledb import TimescaleDB
 from merlin.core.events.pg import PgEventLog
@@ -31,8 +30,7 @@ async def run() -> None:
         await ensure_market_schema(db)
 
         event_log = PgEventLog(db)
-        source = YahooFinanceSource()
-        executor = MarketIngestExecutor(source, db)
+        executor, group = setup_market_worker(db)
 
         from merlin.core.tasks.pg_repository import PgTaskRepository
 
@@ -41,7 +39,7 @@ async def run() -> None:
             repo,
             event_log,
             executor,
-            group="market.ingest",
+            group=group,
             poll_interval=config.worker.poll_interval_seconds,
             heartbeat_interval=config.worker.heartbeat_interval_seconds,
         )
