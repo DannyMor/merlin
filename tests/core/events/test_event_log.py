@@ -1,5 +1,4 @@
 from datetime import datetime, timedelta, timezone
-from uuid import uuid4
 
 from merlin.core.events.memory import InMemoryEventLog
 from merlin.core.events.models import Event, EventLevel, EventSource
@@ -135,16 +134,14 @@ class TestInMemoryEventLog:
         results = await log.query()
         assert results == []
 
-    async def test_event_with_detail_and_correlation(self) -> None:
+    async def test_event_with_detail(self) -> None:
         log = InMemoryEventLog()
-        correlation = uuid4()
         event = Event(
             source=EventSource.WORKER,
             level=EventLevel.INFO,
             component="ingestion",
             action="task_completed",
             detail={"records": 250, "asset": "AAPL"},
-            correlation_id=correlation,
         )
 
         await log.emit(event)
@@ -152,4 +149,3 @@ class TestInMemoryEventLog:
         results = await log.query()
         assert len(results) == 1
         assert results[0].detail["records"] == 250
-        assert results[0].correlation_id == correlation

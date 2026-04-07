@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import os
-from typing import TYPE_CHECKING, cast
+from pathlib import Path
+from typing import cast
 
 import yaml
 
 from merlin.core.config.models import MerlinConfig
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 
 def load_config(path: Path | None = None) -> MerlinConfig:

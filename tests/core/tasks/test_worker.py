@@ -1,39 +1,36 @@
 from __future__ import annotations
 
 import asyncio
-from typing import TYPE_CHECKING
-
-from pydantic import BaseModel
+from uuid import UUID
 
 from merlin.core.events.memory import InMemoryEventLog
 from merlin.core.events.models import EventLevel
-from merlin.core.tasks.interface import TaskExecutor
 from merlin.core.tasks.memory import InMemoryTaskRepository
-from merlin.core.tasks.models import Task, TaskContext, TaskStatus
+from merlin.core.tasks.models import TaskStatus
 from merlin.core.tasks.worker import Worker
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-
-class FakeParams(BaseModel):
-    value: str = "test"
+from tests.conftest import make_task
+from tests.core.tasks.conftest import FakeExecutor, FakeParams
 
 
-class FakeExecutor(TaskExecutor[FakeParams]):
-    def __init__(self, *, fail: bool = False) -> None:
-        self.executed: list[tuple[TaskContext, FakeParams]] = []
-        self._fail = fail
+class FailingHeartbeatRepo(InMemoryTaskRepository):
+    """Repository where heartbeat always fails."""
 
-    async def execute(self, ctx: TaskContext, params: FakeParams) -> None:
-        self.executed.append((ctx, params))
-        if self._fail:
-            msg = "Simulated failure"
-            raise RuntimeError(msg)
+    async def heartbeat(self, worker_id: UUID) -> None:
+        raise ConnectionError("DB unavailable")
 
 
-def _make_task(key: str = "test:1", group: str = "test") -> Task:
-    return Task(key=key, group=group, params={"value": "hello"})
+class TransientHeartbeatRepo(InMemoryTaskRepository):
+    """Repository where the first heartbeat fails, then recovers."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._heartbeat_calls = 0
+
+    async def heartbeat(self, worker_id: UUID) -> None:
+        self._heartbeat_calls += 1
+        if self._heartbeat_calls == 1:
+            raise ConnectionError("Transient failure")
+        await super().heartbeat(worker_id)
 
 
 class TestWorker:
@@ -43,7 +40,7 @@ class TestWorker:
         executor = FakeExecutor()
         worker = Worker(repo, event_log, executor, group="test")
 
-        task = _make_task()
+        task = make_task(params={"value": "hello"})
         await repo.create(task)
 
         processed = await worker.tick()
@@ -72,7 +69,7 @@ class TestWorker:
         executor = FakeExecutor(fail=True)
         worker = Worker(repo, event_log, executor, group="test")
 
-        task = _make_task()
+        task = make_task(params={"value": "hello"})
         await repo.create(task)
 
         processed = await worker.tick()
@@ -89,7 +86,7 @@ class TestWorker:
         executor = FakeExecutor()
         worker = Worker(repo, event_log, executor, group="test")
 
-        await repo.create(_make_task())
+        await repo.create(make_task(params={"value": "hello"}))
         await worker.tick()
 
         events = await event_log.query()
@@ -103,7 +100,7 @@ class TestWorker:
         executor = FakeExecutor(fail=True)
         worker = Worker(repo, event_log, executor, group="test")
 
-        await repo.create(_make_task())
+        await repo.create(make_task(params={"value": "hello"}))
         await worker.tick()
 
         events = await event_log.query(level=EventLevel.ERROR)
@@ -116,27 +113,21 @@ class TestWorker:
         executor = FakeExecutor()
         worker = Worker(repo, event_log, executor, group="other")
 
-        await repo.create(_make_task(group="test"))
+        await repo.create(make_task(group="test"))
 
         processed = await worker.tick()
         assert processed is False
 
-    async def test_parse_params_auto_extraction(self) -> None:
+    async def test_parse_params(self) -> None:
         executor = FakeExecutor()
         params = executor.parse_params({"value": "parsed"})
         assert isinstance(params, FakeParams)
         assert params.value == "parsed"
 
     async def test_self_terminates_on_heartbeat_failure(self) -> None:
-        repo = InMemoryTaskRepository()
+        repo = FailingHeartbeatRepo()
         event_log = InMemoryEventLog()
         executor = FakeExecutor()
-
-        # Override heartbeat to always fail
-        async def failing_heartbeat(worker_id: UUID) -> None:
-            raise ConnectionError("DB unavailable")
-
-        repo.heartbeat = failing_heartbeat  # type: ignore[assignment]
 
         worker = Worker(
             repo,
@@ -148,27 +139,14 @@ class TestWorker:
             max_heartbeat_failures=2,
         )
 
-        # run() should exit because heartbeat failures trigger self-termination
         await worker.run()
 
         assert worker.liveness_failed is True
 
     async def test_heartbeat_recovers_from_transient_failure(self) -> None:
-        repo = InMemoryTaskRepository()
+        repo = TransientHeartbeatRepo()
         event_log = InMemoryEventLog()
         executor = FakeExecutor()
-
-        call_count = 0
-        original_heartbeat = repo.heartbeat
-
-        async def sometimes_failing_heartbeat(worker_id: UUID) -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise ConnectionError("Transient failure")
-            await original_heartbeat(worker_id)
-
-        repo.heartbeat = sometimes_failing_heartbeat  # type: ignore[assignment]
 
         worker = Worker(
             repo,
@@ -180,7 +158,6 @@ class TestWorker:
             max_heartbeat_failures=3,
         )
 
-        # Run briefly — should not self-terminate since failure is transient
         async def stop_after_delay() -> None:
             await asyncio.sleep(0.1)
             worker.stop()

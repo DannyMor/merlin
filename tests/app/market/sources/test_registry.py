@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import date
 
 import pyarrow as pa
 
 from merlin.app.market.sources.interface import DataSource, DataType
 from merlin.app.market.sources.registry import SourceRegistry
-
-if TYPE_CHECKING:
-    from datetime import date
 
 
 class FakeSource:

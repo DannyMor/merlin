@@ -2,14 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
 
+from merlin.core.events.interface import EventLog
 from merlin.core.events.models import Event, EventLevel, EventSource
+from merlin.core.tasks.interface import TaskRepository
 from merlin.core.tasks.models import TaskStatus
-
-if TYPE_CHECKING:
-    from merlin.core.events.interface import EventLog
-    from merlin.core.tasks.interface import TaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +50,9 @@ class Reaper:
                     )
                 )
             else:
-                task.status = TaskStatus.PENDING
-                task.worker_id = None
-                task.retries += 1
-                await self._repo.update_status(task.id, TaskStatus.PENDING)
+                await self._repo.update_status(
+                    task.id, TaskStatus.PENDING, retries=task.retries + 1
+                )
                 await self._event_log.emit(
                     Event(
                         source=EventSource.REAPER,
@@ -65,7 +61,7 @@ class Reaper:
                         action="task_reset",
                         detail={
                             "task_id": str(task.id),
-                            "retries": task.retries,
+                            "retries": task.retries + 1,
                         },
                     )
                 )

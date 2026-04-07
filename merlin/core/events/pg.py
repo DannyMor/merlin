@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from datetime import datetime
 
+from merlin.core.db.interface import Database, Row
 from merlin.core.events.models import Event, EventLevel, EventSource
-
-if TYPE_CHECKING:
-    from datetime import datetime
-    from uuid import UUID
-
-    from merlin.core.db.interface import Database
 
 
 class PgEventLog:
@@ -19,8 +14,8 @@ class PgEventLog:
     async def emit(self, event: Event) -> None:
         await self._db.execute(
             """
-            INSERT INTO event_log (id, ts, source, level, component, action, detail, correlation_id)
-            VALUES (:0, :1, :2, :3, :4, :5, :6, :7)
+            INSERT INTO event_log (id, ts, source, level, component, action, detail)
+            VALUES (:0, :1, :2, :3, :4, :5, :6)
             """,
             [
                 str(event.id),
@@ -30,7 +25,6 @@ class PgEventLog:
                 event.component,
                 event.action,
                 json.dumps(event.detail),
-                str(event.correlation_id) if event.correlation_id is not None else None,
             ],
         )
 
@@ -43,51 +37,34 @@ class PgEventLog:
     ) -> list[Event]:
         conditions: list[str] = []
         params: list[object] = []
-        idx = 0
 
-        if source is not None:
-            conditions.append(f"source = :{idx}")
-            params.append(source.value)
-            idx += 1
-
-        if level is not None:
-            conditions.append(f"level = :{idx}")
-            params.append(level.value)
-            idx += 1
-
-        if since is not None:
-            conditions.append(f"ts >= :{idx}")
-            params.append(since.isoformat())
-            idx += 1
+        for condition, value in [
+            ("source = :{idx}", source.value if source else None),
+            ("level = :{idx}", level.value if level else None),
+            ("ts >= :{idx}", since.isoformat() if since else None),
+        ]:
+            if value is not None:
+                conditions.append(condition.format(idx=len(params)))
+                params.append(value)
 
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
-        query = f"SELECT * FROM event_log{where} ORDER BY ts DESC LIMIT :{idx}"
+        query = f"SELECT * FROM event_log{where} ORDER BY ts DESC LIMIT :{len(params)}"
         params.append(limit)
 
         rows = await self._db.fetch_all(query, params)
         return [self._row_to_event(row) for row in rows]
 
     @staticmethod
-    def _row_to_event(row: dict[str, object]) -> Event:
-        correlation_id_raw = row.get("correlation_id")
-        correlation_id: UUID | None = None
-        if correlation_id_raw is not None:
-            from uuid import UUID as UUIDType
-
-            correlation_id = UUIDType(str(correlation_id_raw))
-
+    def _row_to_event(row: Row) -> Event:
         detail_raw = row.get("detail", "{}")
-        detail: dict[str, object] = (
-            json.loads(str(detail_raw)) if isinstance(detail_raw, str) else {}
-        )
+        detail: dict[str, object] = json.loads(detail_raw) if isinstance(detail_raw, str) else {}
 
         return Event(
-            id=str(row["id"]),  # type: ignore[arg-type]
-            timestamp=str(row["ts"]),  # type: ignore[arg-type]
-            source=EventSource(str(row["source"])),
-            level=EventLevel(str(row["level"])),
-            component=str(row["component"]),
-            action=str(row["action"]),
+            id=row["id"],
+            timestamp=row["ts"],
+            source=EventSource(row["source"]),
+            level=EventLevel(row["level"]),
+            component=row["component"],
+            action=row["action"],
             detail=detail,
-            correlation_id=correlation_id,
         )

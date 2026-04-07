@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from datetime import datetime
+from typing import Protocol
 
-if TYPE_CHECKING:
-    from datetime import datetime
-
-    from merlin.core.events.models import Event, EventLevel, EventSource
+from merlin.core.events.models import Event, EventLevel, EventSource
 
 
 class EventLog(Protocol):

@@ -1,14 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from uuid import UUID
 
-from merlin.core.tasks.models import TaskStatus
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from merlin.core.tasks.models import Task, WorkerInfo
+from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
 
 
 class InMemoryTaskRepository:
@@ -42,6 +37,7 @@ class InMemoryTaskRepository:
         status: TaskStatus,
         *,
         error: str | None = None,
+        retries: int | None = None,
     ) -> None:
         task = self._tasks.get(str(task_id))
         if task is None:
@@ -50,6 +46,8 @@ class InMemoryTaskRepository:
         task.updated_at = datetime.now(timezone.utc)
         if error is not None:
             task.error = error
+        if retries is not None:
+            task.retries = retries
         if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
             task.completed_at = datetime.now(timezone.utc)
 

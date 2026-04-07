@@ -7,35 +7,14 @@ import pyarrow as pa
 
 from merlin.app.market.sources.interface import DataSource, DataType
 from merlin.app.market.sources.schemas import (
-    empty_dividends_table,
-    empty_ohlcv_table,
-    empty_splits_table,
+    DIVIDENDS_SCHEMA,
+    OHLCV_SCHEMA,
+    SPLITS_SCHEMA,
+    empty_table,
 )
 from merlin.app.market.sources.yahoo import YahooFinanceSource
 
 
-def _mock_ohlcv_ticker() -> MagicMock:
-    """Create a mock yf.Ticker that returns OHLCV data."""
-    ticker = MagicMock()
-    mock_df = MagicMock()
-    mock_df.empty = False
-    mock_df.reset_index.return_value = mock_df
-    mock_df.__len__ = lambda _self: 2  # pyright: ignore[reportAssignmentType, reportUnknownLambdaType]
-    mock_df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Adj Close"]
-    mock_df.__getitem__ = _mock_getitem
-    ticker.history.return_value = mock_df
-    return ticker
-
-
-def _mock_empty_ticker() -> MagicMock:
-    """Create a mock yf.Ticker that returns empty data."""
-    ticker = MagicMock()
-    ticker.history.return_value = MagicMock(empty=True)
-    ticker.dividends = MagicMock(empty=True)
-    ticker.splits = MagicMock(empty=True)
-    return ticker
-
-
 def _mock_getitem(_self: object, key: str) -> MagicMock:
     col = MagicMock()
     if key == "Date":
@@ -55,7 +34,7 @@ def _mock_ohlcv_ticker() -> MagicMock:
     mock_df = MagicMock()
     mock_df.empty = False
     mock_df.reset_index.return_value = mock_df
-    mock_df.__len__ = lambda _self: 2  # pyright: ignore[reportAssignmentType, reportUnknownLambdaType]
+    mock_df.__len__ = MagicMock(return_value=2)
     mock_df.columns = ["Date", "Open", "High", "Low", "Close", "Volume", "Adj Close"]
     mock_df.__getitem__ = _mock_getitem
     ticker.history.return_value = mock_df
@@ -69,19 +48,6 @@ def _mock_empty_ticker() -> MagicMock:
     ticker.dividends = MagicMock(empty=True)
     ticker.splits = MagicMock(empty=True)
     return ticker
-
-
-def _mock_getitem(_self: object, key: str) -> MagicMock:
-    col = MagicMock()
-    if key == "Date":
-        col.dt.date.tolist.return_value = [date(2025, 1, 15), date(2025, 1, 16)]
-    elif key == "Volume":
-        col.tolist.return_value = [50000000, 45000000]
-    elif key == "Adj Close":
-        col.tolist.return_value = [152.5, 153.5]
-    else:
-        col.tolist.return_value = [150.0, 151.0]
-    return col
 
 
 class TestYahooFinanceSource:
@@ -101,19 +67,19 @@ class TestYahooFinanceSource:
         assert DataType.FUNDAMENTALS not in source.supported_data_types
 
     def test_empty_ohlcv_table(self) -> None:
-        table = empty_ohlcv_table()
+        table = empty_table(OHLCV_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
         assert "symbol" in table.column_names
         assert "market_date" in table.column_names
 
     def test_empty_dividends_table(self) -> None:
-        table = empty_dividends_table()
+        table = empty_table(DIVIDENDS_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
 
     def test_empty_splits_table(self) -> None:
-        table = empty_splits_table()
+        table = empty_table(SPLITS_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
 
@@ -121,7 +87,7 @@ class TestYahooFinanceSource:
         source = YahooFinanceSource()
         ticker = _mock_ohlcv_ticker()
 
-        table = source._fetch_ohlcv(ticker, "AAPL", "2025-01-15", "2025-01-16")  # pyright: ignore[reportPrivateUsage]
+        table = source.fetch_ohlcv(ticker, "AAPL", "2025-01-15", "2025-01-16")
 
         assert isinstance(table, pa.Table)
         assert table.num_rows == 2
@@ -132,7 +98,7 @@ class TestYahooFinanceSource:
         source = YahooFinanceSource()
         ticker = _mock_empty_ticker()
 
-        table = source._fetch_ohlcv(ticker, "AAPL", "2025-01-15", "2025-01-16")  # pyright: ignore[reportPrivateUsage]
+        table = source.fetch_ohlcv(ticker, "AAPL", "2025-01-15", "2025-01-16")
 
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
@@ -141,7 +107,7 @@ class TestYahooFinanceSource:
         source = YahooFinanceSource()
         ticker = _mock_empty_ticker()
 
-        table = source._fetch_dividends(ticker, "AAPL", "2025-01-01", "2025-12-31")  # pyright: ignore[reportPrivateUsage]
+        table = source.fetch_dividends(ticker, "AAPL", "2025-01-01", "2025-12-31")
 
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
@@ -150,7 +116,7 @@ class TestYahooFinanceSource:
         source = YahooFinanceSource()
         ticker = _mock_empty_ticker()
 
-        table = source._fetch_splits(ticker, "AAPL", "2025-01-01", "2025-12-31")  # pyright: ignore[reportPrivateUsage]
+        table = source.fetch_splits(ticker, "AAPL", "2025-01-01", "2025-12-31")
 
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0

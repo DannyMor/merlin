@@ -3,17 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from merlin.core.tasks.memory import InMemoryTaskRepository
-from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
-
-
-def _make_task(key: str = "test:AAPL:ohlcv", group: str = "test") -> Task:
-    return Task(key=key, group=group, params={"asset": "AAPL"})
+from merlin.core.tasks.models import TaskStatus, WorkerInfo
+from tests.conftest import make_task
 
 
 class TestInMemoryTaskRepository:
     async def test_create_and_get(self) -> None:
         repo = InMemoryTaskRepository()
-        task = _make_task()
+        task = make_task(key="test:AAPL:ohlcv")
         assert await repo.create(task) is True
 
         result = await repo.get(task.id)
@@ -22,33 +19,33 @@ class TestInMemoryTaskRepository:
 
     async def test_create_duplicate_rejected(self) -> None:
         repo = InMemoryTaskRepository()
-        task1 = _make_task()
-        task2 = _make_task()
+        task1 = make_task(key="test:AAPL:ohlcv")
+        task2 = make_task(key="test:AAPL:ohlcv")
 
         assert await repo.create(task1) is True
         assert await repo.create(task2) is False
 
     async def test_create_duplicate_allowed_after_completion(self) -> None:
         repo = InMemoryTaskRepository()
-        task1 = _make_task()
+        task1 = make_task(key="test:AAPL:ohlcv")
         assert await repo.create(task1) is True
         await repo.update_status(task1.id, TaskStatus.COMPLETED)
 
-        task2 = _make_task()
+        task2 = make_task(key="test:AAPL:ohlcv")
         assert await repo.create(task2) is True
 
     async def test_create_different_keys_allowed(self) -> None:
         repo = InMemoryTaskRepository()
-        assert await repo.create(_make_task(key="test:AAPL:ohlcv")) is True
-        assert await repo.create(_make_task(key="test:MSFT:ohlcv")) is True
+        assert await repo.create(make_task(key="test:AAPL:ohlcv")) is True
+        assert await repo.create(make_task(key="test:MSFT:ohlcv")) is True
 
     async def test_claim_filters_by_group(self) -> None:
         repo = InMemoryTaskRepository()
         worker = WorkerInfo(hostname="test")
         await repo.register_worker(worker)
 
-        await repo.create(_make_task(key="a:1", group="group_a"))
-        await repo.create(_make_task(key="b:1", group="group_b"))
+        await repo.create(make_task(key="a:1", group="group_a"))
+        await repo.create(make_task(key="b:1", group="group_b"))
 
         claimed = await repo.claim(worker.id, "group_b")
         assert claimed is not None
@@ -60,7 +57,7 @@ class TestInMemoryTaskRepository:
         worker = WorkerInfo(hostname="test")
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
 
         claimed = await repo.claim(worker.id, "test")
@@ -77,7 +74,7 @@ class TestInMemoryTaskRepository:
 
     async def test_update_status(self) -> None:
         repo = InMemoryTaskRepository()
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
 
         await repo.update_status(task.id, TaskStatus.COMPLETED)
@@ -89,7 +86,7 @@ class TestInMemoryTaskRepository:
 
     async def test_update_status_with_error(self) -> None:
         repo = InMemoryTaskRepository()
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
 
         await repo.update_status(task.id, TaskStatus.FAILED, error="boom")
@@ -99,10 +96,21 @@ class TestInMemoryTaskRepository:
         assert result.status == TaskStatus.FAILED
         assert result.error == "boom"
 
+    async def test_update_status_with_retries(self) -> None:
+        repo = InMemoryTaskRepository()
+        task = make_task()
+        await repo.create(task)
+
+        await repo.update_status(task.id, TaskStatus.PENDING, retries=2)
+
+        result = await repo.get(task.id)
+        assert result is not None
+        assert result.retries == 2
+
     async def test_find_by_status(self) -> None:
         repo = InMemoryTaskRepository()
-        t1 = _make_task(key="test:AAPL:ohlcv")
-        t2 = _make_task(key="test:MSFT:ohlcv")
+        t1 = make_task(key="test:AAPL:ohlcv")
+        t2 = make_task(key="test:MSFT:ohlcv")
         await repo.create(t1)
         await repo.create(t2)
         await repo.update_status(t1.id, TaskStatus.COMPLETED)
@@ -113,13 +121,12 @@ class TestInMemoryTaskRepository:
 
     async def test_find_stale_no_worker(self) -> None:
         repo = InMemoryTaskRepository()
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
         worker = WorkerInfo(hostname="test")
         claimed = await repo.claim(worker.id, "test")
         assert claimed is not None
 
-        # Worker not registered, so task is stale
         stale = await repo.find_stale(0.0)
         assert len(stale) == 1
 
@@ -129,7 +136,7 @@ class TestInMemoryTaskRepository:
         worker.last_heartbeat = datetime.now(timezone.utc) - timedelta(minutes=5)
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
         await repo.claim(worker.id, "test")
 

@@ -1,14 +1,11 @@
+from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import pytest
 import yaml
 
 from merlin.core.config.loader import load_config
 from merlin.core.config.models import MerlinConfig
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator
 
 
 @pytest.fixture

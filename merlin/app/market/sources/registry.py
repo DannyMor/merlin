@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from merlin.app.market.sources.interface import DataSource, DataType
+from merlin.app.market.sources.interface import DataSource, DataType
 
 
 class SourceRegistry:

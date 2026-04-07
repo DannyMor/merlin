@@ -31,4 +31,3 @@ class Event(BaseModel):
     component: str
     action: str
     detail: dict[str, Any] = Field(default_factory=dict)
-    correlation_id: UUID | None = None

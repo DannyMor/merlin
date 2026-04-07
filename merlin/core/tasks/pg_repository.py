@@ -2,14 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from uuid import UUID
 
+from merlin.core.db.interface import Database, Row
 from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
-
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from merlin.core.db.interface import Database
 
 
 class PgTaskRepository:
@@ -65,20 +61,26 @@ class PgTaskRepository:
         status: TaskStatus,
         *,
         error: str | None = None,
+        retries: int | None = None,
     ) -> None:
         now = datetime.now(timezone.utc)
         if status in (TaskStatus.COMPLETED, TaskStatus.FAILED):
             await self._db.execute(
                 """
-                UPDATE tasks SET status = :0, error = :1, completed_at = :2, updated_at = :3
-                WHERE id = :4
+                UPDATE tasks SET status = :0, error = :1, completed_at = :2, updated_at = :3,
+                    retries = COALESCE(:4, retries)
+                WHERE id = :5
                 """,
-                [status.value, error, now, now, str(task_id)],
+                [status.value, error, now, now, retries, str(task_id)],
             )
         else:
             await self._db.execute(
-                "UPDATE tasks SET status = :0, error = :1, updated_at = :2 WHERE id = :3",
-                [status.value, error, now, str(task_id)],
+                """
+                UPDATE tasks SET status = :0, error = :1, updated_at = :2,
+                    retries = COALESCE(:3, retries)
+                WHERE id = :4
+                """,
+                [status.value, error, now, retries, str(task_id)],
             )
 
     async def get(self, task_id: UUID) -> Task | None:
@@ -151,22 +153,22 @@ class PgTaskRepository:
             [str(worker_id)],
         )
 
-    def _row_to_task(self, row: dict[str, object]) -> Task:
+    def _row_to_task(self, row: Row) -> Task:
         params_raw = row.get("params", "{}")
-        params = json.loads(str(params_raw)) if isinstance(params_raw, str) else params_raw
+        params = json.loads(params_raw) if isinstance(params_raw, str) else params_raw
 
         return Task(
-            id=row["id"],  # pyright: ignore[reportArgumentType]
-            key=str(row["key"]),
-            group=str(row["group"]),
-            params=params,  # pyright: ignore[reportArgumentType]
-            status=TaskStatus(str(row["status"])),
-            worker_id=row.get("worker_id"),  # pyright: ignore[reportArgumentType]
-            retries=int(row.get("retries", 0)),  # pyright: ignore[reportArgumentType]
-            max_retries=int(row.get("max_retries", 3)),  # pyright: ignore[reportArgumentType]
-            created_at=row["created_at"],  # pyright: ignore[reportArgumentType]
-            updated_at=row["updated_at"],  # pyright: ignore[reportArgumentType]
-            started_at=row.get("started_at"),  # pyright: ignore[reportArgumentType]
-            completed_at=row.get("completed_at"),  # pyright: ignore[reportArgumentType]
-            error=row.get("error"),  # pyright: ignore[reportArgumentType]
+            id=row["id"],
+            key=row["key"],
+            group=row["group"],
+            params=params,
+            status=TaskStatus(row["status"]),
+            worker_id=row.get("worker_id"),
+            retries=int(row.get("retries", 0)),
+            max_retries=int(row.get("max_retries", 3)),
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            started_at=row.get("started_at"),
+            completed_at=row.get("completed_at"),
+            error=row.get("error"),
         )

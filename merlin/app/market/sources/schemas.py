@@ -1,3 +1,5 @@
+# pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
+# pyarrow stubs type Schema.field() as Field[Unknown]; no workaround exists.
 from __future__ import annotations
 
 import pyarrow as pa
@@ -32,36 +34,8 @@ SPLITS_SCHEMA = pa.schema(
 )
 
 
-def empty_ohlcv_table() -> pa.Table:
+def empty_table(schema: pa.Schema) -> pa.Table:
+    """Create an empty PyArrow table matching the given schema."""
     return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "open": pa.array([], type=pa.float64()),
-            "high": pa.array([], type=pa.float64()),
-            "low": pa.array([], type=pa.float64()),
-            "close": pa.array([], type=pa.float64()),
-            "volume": pa.array([], type=pa.int64()),
-            "adjusted_close": pa.array([], type=pa.float64()),
-        }
-    )
-
-
-def empty_dividends_table() -> pa.Table:
-    return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "amount": pa.array([], type=pa.float64()),
-        }
-    )
-
-
-def empty_splits_table() -> pa.Table:
-    return pa.table(
-        {
-            "symbol": pa.array([], type=pa.string()),
-            "market_date": pa.array([], type=pa.date32()),
-            "ratio": pa.array([], type=pa.float64()),
-        }
+        {schema.field(i).name: pa.array([], type=schema.field(i).type) for i in range(len(schema))}
     )

@@ -6,9 +6,7 @@ from merlin.app.market.sources.schemas import (
     DIVIDENDS_SCHEMA,
     OHLCV_SCHEMA,
     SPLITS_SCHEMA,
-    empty_dividends_table,
-    empty_ohlcv_table,
-    empty_splits_table,
+    empty_table,
 )
 
 
@@ -37,19 +35,19 @@ class TestSchemas:
 
 class TestEmptyTables:
     def test_empty_ohlcv_table(self) -> None:
-        table = empty_ohlcv_table()
+        table = empty_table(OHLCV_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
         assert table.schema == OHLCV_SCHEMA
 
     def test_empty_dividends_table(self) -> None:
-        table = empty_dividends_table()
+        table = empty_table(DIVIDENDS_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
         assert table.schema == DIVIDENDS_SCHEMA
 
     def test_empty_splits_table(self) -> None:
-        table = empty_splits_table()
+        table = empty_table(SPLITS_SCHEMA)
         assert isinstance(table, pa.Table)
         assert table.num_rows == 0
         assert table.schema == SPLITS_SCHEMA

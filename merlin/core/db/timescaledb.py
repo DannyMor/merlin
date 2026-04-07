@@ -1,18 +1,14 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
 
 from sqlalchemy import CursorResult, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
+from merlin.core.config.models import DatabaseConfig
 from merlin.core.db.interface import Row
-
-if TYPE_CHECKING:
-    from collections.abc import AsyncIterator
-
-    from merlin.core.config.models import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 

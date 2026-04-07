@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Protocol, get_args
+from typing import Any, ClassVar, Protocol
+from uuid import UUID
 
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from uuid import UUID
-
-    from merlin.core.tasks.models import Task, TaskContext, TaskStatus, WorkerInfo
+from merlin.core.tasks.models import Task, TaskContext, TaskStatus, WorkerInfo
 
 
 class TaskRepository(Protocol):
@@ -26,6 +24,7 @@ class TaskRepository(Protocol):
         status: TaskStatus,
         *,
         error: str | None = None,
+        retries: int | None = None,
     ) -> None: ...
 
     async def get(self, task_id: UUID) -> Task | None: ...
@@ -45,28 +44,31 @@ class TaskRepository(Protocol):
     async def remove_worker(self, worker_id: UUID) -> None: ...
 
 
-class TaskExecutor[T: BaseModel](ABC):
-    """Base class for task executors with typed params.
+class TaskExecutor[T](ABC):
+    """Base class for task executors with typed params."""
 
-    Subclasses must specify the params type via Generic:
-        class MyExecutor(TaskExecutor[MyParams]):
+    @abstractmethod
+    def parse_params(self, raw: dict[str, Any]) -> T: ...
+
+    @abstractmethod
+    async def execute(self, ctx: TaskContext, params: T) -> None: ...
+
+
+class ModelTaskExecutor[T: BaseModel](TaskExecutor[T], ABC):
+    """Task executor with Pydantic model-based param parsing.
+
+    Subclasses must set _params_type to their concrete params class:
+
+        class MyExecutor(ModelTaskExecutor[MyParams]):
+            _params_type = MyParams
+
             async def execute(self, ctx: TaskContext, params: MyParams) -> None: ...
-
-    The params type is automatically extracted at class definition time
-    and used for validation in parse_params().
     """
 
-    _params_type: type[T]
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        for base in getattr(cls, "__orig_bases__", ()):
-            args = get_args(base)
-            if args and isinstance(args[0], type) and issubclass(args[0], BaseModel):
-                cls._params_type = args[0]  # pyright: ignore[reportAttributeAccessIssue]
+    _params_type: ClassVar[type[BaseModel]]
 
     def parse_params(self, raw: dict[str, Any]) -> T:
-        return self._params_type.model_validate(raw)
+        return self._params_type.model_validate(raw)  # type: ignore[return-value]
 
     @abstractmethod
     async def execute(self, ctx: TaskContext, params: T) -> None: ...

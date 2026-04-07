@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    import polars as pl
+import polars as pl
 
-    from merlin.app.analytics.engine import AnalyticsEngine
-    from merlin.app.analytics.models import ProcedureDef
+from merlin.app.analytics.engine import AnalyticsEngine
+from merlin.app.analytics.models import ProcedureDef
 
 
 class ProcedureRunner:

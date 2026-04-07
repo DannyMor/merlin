@@ -5,12 +5,9 @@ from datetime import datetime, timedelta, timezone
 from merlin.core.events.memory import InMemoryEventLog
 from merlin.core.events.models import EventLevel
 from merlin.core.tasks.memory import InMemoryTaskRepository
-from merlin.core.tasks.models import Task, TaskStatus, WorkerInfo
+from merlin.core.tasks.models import TaskStatus, WorkerInfo
 from merlin.core.tasks.reaper import Reaper
-
-
-def _make_task(key: str = "test:AAPL:ohlcv", group: str = "test") -> Task:
-    return Task(key=key, group=group)
+from tests.conftest import make_task
 
 
 def _dead_worker() -> WorkerInfo:
@@ -28,7 +25,7 @@ class TestReaper:
         worker = _dead_worker()
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
         await repo.claim(worker.id, "test")
 
@@ -38,6 +35,7 @@ class TestReaper:
         result = await repo.get(task.id)
         assert result is not None
         assert result.status == TaskStatus.PENDING
+        assert result.retries == 1
 
     async def test_tick_marks_dead_after_max_retries(self) -> None:
         repo = InMemoryTaskRepository()
@@ -47,7 +45,7 @@ class TestReaper:
         worker = _dead_worker()
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         task.retries = 2
         await repo.create(task)
         await repo.claim(worker.id, "test")
@@ -67,7 +65,7 @@ class TestReaper:
         worker = _dead_worker()
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
         await repo.claim(worker.id, "test")
 
@@ -85,7 +83,7 @@ class TestReaper:
         worker = _dead_worker()
         await repo.register_worker(worker)
 
-        task = _make_task()
+        task = make_task()
         await repo.create(task)
         await repo.claim(worker.id, "test")
 

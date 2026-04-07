@@ -3,14 +3,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import platform
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from merlin.core.events.interface import EventLog
 from merlin.core.events.models import Event, EventLevel, EventSource
+from merlin.core.tasks.interface import TaskExecutor, TaskRepository
 from merlin.core.tasks.models import TaskContext, TaskStatus, WorkerInfo
-
-if TYPE_CHECKING:
-    from merlin.core.events.interface import EventLog
-    from merlin.core.tasks.interface import TaskExecutor, TaskRepository
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +36,7 @@ class Worker:
         self._liveness_failed = False
 
     @property
-    def worker_id(self) -> WorkerInfo:
+    def worker_info(self) -> WorkerInfo:
         return self._info
 
     @property

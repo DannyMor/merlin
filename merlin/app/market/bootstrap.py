@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import yaml
 
 from merlin.app.market.sources.interface import DataType
 from merlin.app.market.sources.yahoo import YahooFinanceSource
 from merlin.app.market.tasks.ingest import MarketIngestExecutor, MarketIngestSchedule
-
-if TYPE_CHECKING:
-    from merlin.core.db.interface import Database
-    from merlin.core.tasks.interface import TaskSchedule
+from merlin.core.db.interface import Database
+from merlin.core.tasks.interface import TaskSchedule
 
 
 def setup_market_worker(db: Database) -> tuple[MarketIngestExecutor, str]:

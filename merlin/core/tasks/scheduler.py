@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
 
+from merlin.core.events.interface import EventLog
 from merlin.core.events.models import Event, EventLevel, EventSource
-
-if TYPE_CHECKING:
-    from merlin.core.events.interface import EventLog
-    from merlin.core.tasks.interface import TaskRepository, TaskSchedule
+from merlin.core.tasks.interface import TaskRepository, TaskSchedule
 
 logger = logging.getLogger(__name__)
 

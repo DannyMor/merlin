@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from datetime import date
 
 import pyarrow as pa
-
-if TYPE_CHECKING:
-    from datetime import date
 
 from merlin.app.market.sources.interface import DataType
 from merlin.app.market.tasks.ingest import (

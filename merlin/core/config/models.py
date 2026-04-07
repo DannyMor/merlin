@@ -3,12 +3,12 @@ from pydantic import BaseModel, Field
 
 class DatabaseConfig(BaseModel):
     host: str = "localhost"
-    port: int = 5432
+    port: int = Field(default=5432, gt=0, le=65535)
     database: str = "merlin"
     user: str = "merlin"
     password: str = "merlin"
-    pool_min_size: int = 2
-    pool_max_size: int = 10
+    pool_min_size: int = Field(default=2, ge=1)
+    pool_max_size: int = Field(default=10, ge=1)
 
     @property
     def dsn(self) -> str:
@@ -16,20 +16,20 @@ class DatabaseConfig(BaseModel):
 
 
 class SchedulerConfig(BaseModel):
-    poll_interval_seconds: float = 60.0
-    batch_size: int = 50
+    poll_interval_seconds: float = Field(default=60.0, gt=0)
+    batch_size: int = Field(default=50, ge=1)
 
 
 class WorkerConfig(BaseModel):
-    poll_interval_seconds: float = 5.0
-    heartbeat_interval_seconds: float = 15.0
-    max_concurrent_tasks: int = 5
+    poll_interval_seconds: float = Field(default=5.0, gt=0)
+    heartbeat_interval_seconds: float = Field(default=15.0, gt=0)
+    max_concurrent_tasks: int = Field(default=5, ge=1)
 
 
 class ReaperConfig(BaseModel):
-    poll_interval_seconds: float = 30.0
-    stale_threshold_seconds: float = 60.0
-    max_retries: int = 3
+    poll_interval_seconds: float = Field(default=30.0, gt=0)
+    stale_threshold_seconds: float = Field(default=60.0, gt=0)
+    max_retries: int = Field(default=3, ge=0)
 
 
 class LoggingConfig(BaseModel):

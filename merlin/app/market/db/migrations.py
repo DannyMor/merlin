@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    from merlin.core.db.interface import Database
+from merlin.core.db.interface import Database
 
 logger = logging.getLogger(__name__)
 

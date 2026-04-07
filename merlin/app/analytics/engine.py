@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import Protocol
 
 import duckdb
-
-if TYPE_CHECKING:
-    import polars as pl
-    import pyarrow as pa
+import polars as pl
+import pyarrow as pa
 
 
 class AnalyticsEngine(Protocol):

@@ -6,20 +6,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
 
 from merlin.app.market.sources.interface import DataType
 from merlin.app.market.sources.schemas import (
-    empty_dividends_table,
-    empty_ohlcv_table,
-    empty_splits_table,
+    DIVIDENDS_SCHEMA,
+    OHLCV_SCHEMA,
+    SPLITS_SCHEMA,
+    empty_table,
 )
 
 if TYPE_CHECKING:
-    from datetime import date
-
     import yfinance as yf
 
 logger = logging.getLogger(__name__)
@@ -45,10 +45,10 @@ class YahooFinanceSource:
     ) -> pa.Table:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            None, self._fetch_sync, asset, data_type, from_date, to_date
+            None, self.fetch_sync, asset, data_type, from_date, to_date
         )
 
-    def _fetch_sync(
+    def fetch_sync(
         self,
         asset: str,
         data_type: DataType,
@@ -63,16 +63,16 @@ class YahooFinanceSource:
 
         match data_type:
             case DataType.OHLCV:
-                return self._fetch_ohlcv(ticker, asset, start, end)
+                return self.fetch_ohlcv(ticker, asset, start, end)
             case DataType.DIVIDENDS:
-                return self._fetch_dividends(ticker, asset, start, end)
+                return self.fetch_dividends(ticker, asset, start, end)
             case DataType.SPLITS:
-                return self._fetch_splits(ticker, asset, start, end)
+                return self.fetch_splits(ticker, asset, start, end)
             case _:
                 msg = f"Unsupported data type: {data_type}"
                 raise ValueError(msg)
 
-    def _fetch_ohlcv(
+    def fetch_ohlcv(
         self,
         ticker: yf.Ticker,
         asset: str,
@@ -81,7 +81,7 @@ class YahooFinanceSource:
     ) -> pa.Table:
         df = ticker.history(start=start, end=end, auto_adjust=False)
         if df.empty:
-            return empty_ohlcv_table()
+            return empty_table(OHLCV_SCHEMA)
 
         df = df.reset_index()
         n = len(df)
@@ -99,7 +99,7 @@ class YahooFinanceSource:
             }
         )
 
-    def _fetch_dividends(
+    def fetch_dividends(
         self,
         ticker: yf.Ticker,
         asset: str,
@@ -108,7 +108,7 @@ class YahooFinanceSource:
     ) -> pa.Table:
         div = ticker.dividends
         if div.empty:
-            return empty_dividends_table()
+            return empty_table(DIVIDENDS_SCHEMA)
 
         div = div.loc[start:end]
         n = len(div)
@@ -120,7 +120,7 @@ class YahooFinanceSource:
             }
         )
 
-    def _fetch_splits(
+    def fetch_splits(
         self,
         ticker: yf.Ticker,
         asset: str,
@@ -129,7 +129,7 @@ class YahooFinanceSource:
     ) -> pa.Table:
         splits = ticker.splits
         if splits.empty:
-            return empty_splits_table()
+            return empty_table(SPLITS_SCHEMA)
 
         splits = splits.loc[start:end]
         n = len(splits)
